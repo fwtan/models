@@ -119,7 +119,6 @@ def _ParseFunction(example, name_to_features, image_size, augmentation):
   else:
     image = tf.image.resize(image, [image_size, image_size])
     image.set_shape([image_size, image_size, 3])
-  print(image)
   # Parse to get label.
   label = parsed_example['image/class/label']
   return image, label

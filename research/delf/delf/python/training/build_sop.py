@@ -28,7 +28,10 @@ def _get_image_files_and_labels(data_dir, split):
         image_paths.append(osp.join(image_sourcepath, img_path))
         file_ids.append(img_id-1)
         labels.append(key-1)
-    return image_paths, file_ids, labels
+    num_samples = len(image_paths)
+    num_batches = num_samples // 32
+    num_samples = num_batches * 32
+    return image_paths[:num_samples], file_ids[:num_samples], labels[:num_samples]
 
 
 def _process_image(filename):

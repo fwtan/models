@@ -360,8 +360,9 @@ def main(argv):
             for i in range(num_eval):
               try:
                 validation_batch = validation_iterator.get_next()
-                images, labels = validation_batch
+                # images, labels = validation_batch
                 # print(images)
+                # print(i)
                 desc_validation_result, attn_validation_result = (
                     distributed_validation_step(validation_batch))
               except tf.errors.OutOfRangeError:
