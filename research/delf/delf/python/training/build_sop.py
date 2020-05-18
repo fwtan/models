@@ -15,7 +15,7 @@ import os.path as osp
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string('data_dir', '/tmp/', 'data directory.')
-flags.DEFINE_string('output_directory', '/tmp/', 'Output data directory.')
+flags.DEFINE_string('out_dir', '/tmp/', 'Output data directory.')
 flags.DEFINE_integer('num_shards', 8, 'Number of shards in output data.')
 
 
@@ -50,6 +50,7 @@ def _process_image(filename):
 
   # Decode the RGB JPEG.
   image = tf.io.decode_jpeg(image_data, channels=3)
+  print(image.shape)
 
   # Check that image converted to RGB
   if len(image.shape) != 3:
@@ -130,7 +131,7 @@ def _write_tfrecord(output_prefix, image_paths, file_ids, labels):
 
   for shard in range(FLAGS.num_shards):
     output_file = os.path.join(
-        FLAGS.output_directory,
+        FLAGS.out_dir,
         '%s-%.5d-of-%.5d' % (output_prefix, shard, FLAGS.num_shards))
     writer = tf.io.TFRecordWriter(output_file)
     print('Processing shard ', shard, ' and writing file ', output_file)
