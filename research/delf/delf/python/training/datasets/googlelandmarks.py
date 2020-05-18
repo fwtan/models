@@ -60,8 +60,7 @@ def NormalizeImages(images, pixel_value_scale=0.5, pixel_value_offset=0.5):
     normalized_images: `Tensor`, normalized images.
   """
   images = tf.cast(images, tf.float32)
-  normalized_images = tf.math.divide(
-      tf.subtract(images, pixel_value_offset), pixel_value_scale)
+  normalized_images = tf.math.divide(tf.subtract(images, pixel_value_offset), pixel_value_scale)
   return normalized_images
 
 
