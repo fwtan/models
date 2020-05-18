@@ -158,9 +158,9 @@ def main(argv):
 
     input_batch = train_iterator.get_next()
     validation_batch = validation_iterator.get_next()
-    images, labels = input_batch
-    print(images)
-    print(labels)
+    images, labels = validation_batch
+    print(images.shape)
+    print(labels.shape)
 
 
 
