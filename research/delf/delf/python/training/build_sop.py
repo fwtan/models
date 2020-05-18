@@ -16,7 +16,7 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_string('data_dir', '/tmp/', 'data directory.')
 flags.DEFINE_string('out_dir', '/tmp/', 'Output data directory.')
-flags.DEFINE_integer('num_shards', 8, 'Number of shards in output data.')
+flags.DEFINE_integer('num_shards', 128, 'Number of shards in output data.')
 
 
 

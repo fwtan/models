@@ -163,6 +163,6 @@ def CreateDataset(file_pattern,
       image_size=image_size,
       augmentation=augmentation)
   dataset = dataset.map(customized_parse_func)
-  dataset = dataset.batch(batch_size, drop_remainder=True)
+  dataset = dataset.batch(batch_size)
 
   return dataset
