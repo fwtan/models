@@ -346,7 +346,7 @@ def main(argv):
           tf.summary.scalar('train_accuracy/desc', desc_train_accuracy.result(), step=global_step)
           tf.summary.scalar('train_accuracy/attn', attn_train_accuracy.result(), step=global_step)
 
-          print(desc_train_accuracy.result())
+          # print(desc_train_accuracy.result())
 
           # Print to console if running locally.
           if FLAGS.debug:
@@ -361,7 +361,7 @@ def main(argv):
               try:
                 validation_batch = validation_iterator.get_next()
                 images, labels = validation_batch
-                print(images)
+                # print(images)
                 desc_validation_result, attn_validation_result = (
                     distributed_validation_step(validation_batch))
               except tf.errors.OutOfRangeError:
