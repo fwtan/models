@@ -324,7 +324,6 @@ def main(argv):
           try:
             input_batch = train_iterator.get_next()
             images, labels = input_batch
-            print(images)
           except tf.errors.OutOfRangeError:
             # Break if we run out of data in the dataset.
             logging.info('Stopping training at global step %d, no more data', global_step_value)
@@ -342,18 +341,12 @@ def main(argv):
           desc_dist_loss, attn_dist_loss = distributed_train_step(input_batch)
 
           # Log losses and accuracies to tensorboard.
-          tf.summary.scalar(
-              'loss/desc/crossentropy', desc_dist_loss, step=global_step)
-          tf.summary.scalar(
-              'loss/attn/crossentropy', attn_dist_loss, step=global_step)
-          tf.summary.scalar(
-              'train_accuracy/desc',
-              desc_train_accuracy.result(),
-              step=global_step)
-          tf.summary.scalar(
-              'train_accuracy/attn',
-              attn_train_accuracy.result(),
-              step=global_step)
+          tf.summary.scalar('loss/desc/crossentropy', desc_dist_loss, step=global_step)
+          tf.summary.scalar('loss/attn/crossentropy', attn_dist_loss, step=global_step)
+          tf.summary.scalar('train_accuracy/desc', desc_train_accuracy.result(), step=global_step)
+          tf.summary.scalar('train_accuracy/attn', attn_train_accuracy.result(), step=global_step)
+
+          print(desc_train_accuracy.result())
 
           # Print to console if running locally.
           if FLAGS.debug:
@@ -367,6 +360,8 @@ def main(argv):
             for i in range(num_eval):
               try:
                 validation_batch = validation_iterator.get_next()
+                images, labels = validation_batch
+                print(images)
                 desc_validation_result, attn_validation_result = (
                     distributed_validation_step(validation_batch))
               except tf.errors.OutOfRangeError:
