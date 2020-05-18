@@ -50,7 +50,7 @@ def _process_image(filename):
 
   # Decode the RGB JPEG.
   image = tf.io.decode_jpeg(image_data, channels=3)
-  print(image.shape)
+#   print(image.shape)
 
   # Check that image converted to RGB
   if len(image.shape) != 3:
