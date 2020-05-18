@@ -156,279 +156,258 @@ def main(argv):
   # Finally, we do everything in distributed scope.
   with strategy.scope():
 
-    input_batch = train_iterator.get_next()
-    validation_batch = validation_iterator.get_next()
-    images, labels = validation_batch
-    print(images)
-    print(labels)
+    # input_batch = train_iterator.get_next()
+    # validation_batch = validation_iterator.get_next()
+    # images, labels = validation_batch
+    # print(images)
+    # print(labels)
 
+    # Compute loss.
+    # Set reduction to `none` so we can do the reduction afterwards and divide
+    # by global batch size.
+    loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE)
+    def compute_loss(labels, predictions):
+      per_example_loss = loss_object(labels, predictions)
+      return tf.nn.compute_average_loss(per_example_loss, global_batch_size=global_batch_size)
 
+    # Set up metrics.
+    desc_validation_loss = tf.keras.metrics.Mean(name='desc_validation_loss')
+    attn_validation_loss = tf.keras.metrics.Mean(name='attn_validation_loss')
+    desc_train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='desc_train_accuracy')
+    attn_train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='attn_train_accuracy')
+    desc_validation_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='desc_validation_accuracy')
+    attn_validation_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='attn_validation_accuracy')
 
-    # # Compute loss.
-    # # Set reduction to `none` so we can do the reduction afterwards and divide
-    # # by global batch size.
-    # loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
-    #     from_logits=True, reduction=tf.keras.losses.Reduction.NONE)
+    # ------------------------------------------------------------
+    # Setup DELF model and optimizer.
+    model = create_model(num_classes)
+    logging.info('Model, datasets loaded.\nnum_classes= %d', num_classes)
 
-    # def compute_loss(labels, predictions):
-    #   per_example_loss = loss_object(labels, predictions)
-    #   return tf.nn.compute_average_loss(
-    #       per_example_loss, global_batch_size=global_batch_size)
+    optimizer = tf.keras.optimizers.SGD(learning_rate=initial_lr, momentum=0.9)
 
-    # # Set up metrics.
-    # desc_validation_loss = tf.keras.metrics.Mean(name='desc_validation_loss')
-    # attn_validation_loss = tf.keras.metrics.Mean(name='attn_validation_loss')
-    # desc_train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
-    #     name='desc_train_accuracy')
-    # attn_train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
-    #     name='attn_train_accuracy')
-    # desc_validation_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
-    #     name='desc_validation_accuracy')
-    # attn_validation_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
-    #     name='attn_validation_accuracy')
+    # Setup summary writer.
+    summary_writer = tf.summary.create_file_writer(os.path.join(FLAGS.logdir, 'train_logs'), flush_millis=10000)
 
-    # # ------------------------------------------------------------
-    # # Setup DELF model and optimizer.
-    # model = create_model(num_classes)
-    # logging.info('Model, datasets loaded.\nnum_classes= %d', num_classes)
+    # Setup checkpoint directory.
+    checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
+    manager = tf.train.CheckpointManager(checkpoint, checkpoint_prefix, max_to_keep=3)
 
-    # optimizer = tf.keras.optimizers.SGD(learning_rate=initial_lr, momentum=0.9)
+    # ------------------------------------------------------------
+    # Train step to run on one GPU.
+    def train_step(inputs):
+      """Train one batch."""
+      images, labels = inputs
+      # Temporary workaround to avoid some corrupted labels.
+      labels = tf.clip_by_value(labels, 0, model.num_classes)
 
-    # # Setup summary writer.
-    # summary_writer = tf.summary.create_file_writer(
-    #     os.path.join(FLAGS.logdir, 'train_logs'), flush_millis=10000)
+      global_step = optimizer.iterations
+      tf.summary.scalar('image_range/max', tf.reduce_max(images), step=global_step)
+      tf.summary.scalar('image_range/min', tf.reduce_min(images), step=global_step)
 
-    # # Setup checkpoint directory.
-    # checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
-    # manager = tf.train.CheckpointManager(
-    #     checkpoint, checkpoint_prefix, max_to_keep=3)
+      def _backprop_loss(tape, loss, weights):
+        """Backpropogate losses using clipped gradients.
 
-    # # ------------------------------------------------------------
-    # # Train step to run on one GPU.
-    # def train_step(inputs):
-    #   """Train one batch."""
-    #   images, labels = inputs
-    #   # Temporary workaround to avoid some corrupted labels.
-    #   labels = tf.clip_by_value(labels, 0, model.num_classes)
+        Args:
+          tape: gradient tape.
+          loss: scalar Tensor, loss value.
+          weights: keras model weights.
+        """
+        gradients = tape.gradient(loss, weights)
+        clipped, _ = tf.clip_by_global_norm(gradients, clip_norm=clip_val)
+        optimizer.apply_gradients(zip(clipped, weights))
 
-    #   global_step = optimizer.iterations
-    #   tf.summary.scalar(
-    #       'image_range/max', tf.reduce_max(images), step=global_step)
-    #   tf.summary.scalar(
-    #       'image_range/min', tf.reduce_min(images), step=global_step)
+      # Record gradients and loss through backbone.
+      with tf.GradientTape() as desc_tape:
 
-    #   def _backprop_loss(tape, loss, weights):
-    #     """Backpropogate losses using clipped gradients.
+        blocks = {}
+        prelogits = model.backbone(images, intermediates_dict=blocks, training=True)
 
-    #     Args:
-    #       tape: gradient tape.
-    #       loss: scalar Tensor, loss value.
-    #       weights: keras model weights.
-    #     """
-    #     gradients = tape.gradient(loss, weights)
-    #     clipped, _ = tf.clip_by_global_norm(gradients, clip_norm=clip_val)
-    #     optimizer.apply_gradients(zip(clipped, weights))
+        # Report sparsity.
+        activations_zero_fractions = {
+            'sparsity/%s' % k: tf.nn.zero_fraction(v)
+            for k, v in blocks.items()
+        }
+        for k, v in activations_zero_fractions.items():
+          tf.summary.scalar(k, v, step=global_step)
 
-    #   # Record gradients and loss through backbone.
-    #   with tf.GradientTape() as desc_tape:
+        # Apply descriptor classifier.
+        logits = model.desc_classification(prelogits)
 
-    #     blocks = {}
-    #     prelogits = model.backbone(
-    #         images, intermediates_dict=blocks, training=True)
+        desc_loss = compute_loss(labels, logits)
 
-    #     # Report sparsity.
-    #     activations_zero_fractions = {
-    #         'sparsity/%s' % k: tf.nn.zero_fraction(v)
-    #         for k, v in blocks.items()
-    #     }
-    #     for k, v in activations_zero_fractions.items():
-    #       tf.summary.scalar(k, v, step=global_step)
+      # Backprop only through backbone weights.
+      _backprop_loss(desc_tape, desc_loss, model.desc_trainable_weights)
 
-    #     # Apply descriptor classifier.
-    #     logits = model.desc_classification(prelogits)
+      # Record descriptor train accuracy.
+      _record_accuracy(desc_train_accuracy, logits, labels)
 
-    #     desc_loss = compute_loss(labels, logits)
+      # Record gradients and loss through attention block.
+      with tf.GradientTape() as attn_tape:
+        block3 = blocks['block3']  # pytype: disable=key-error
 
-    #   # Backprop only through backbone weights.
-    #   _backprop_loss(desc_tape, desc_loss, model.desc_trainable_weights)
+        # Stopping gradients according to DELG paper:
+        # (https://arxiv.org/abs/2001.05027).
+        block3 = tf.stop_gradient(block3)
 
-    #   # Record descriptor train accuracy.
-    #   _record_accuracy(desc_train_accuracy, logits, labels)
+        prelogits, scores, _ = model.attention(block3, training=True)
+        _attention_summaries(scores, global_step)
 
-    #   # Record gradients and loss through attention block.
-    #   with tf.GradientTape() as attn_tape:
-    #     block3 = blocks['block3']  # pytype: disable=key-error
+        # Apply attention block classifier.
+        logits = model.attn_classification(prelogits)
 
-    #     # Stopping gradients according to DELG paper:
-    #     # (https://arxiv.org/abs/2001.05027).
-    #     block3 = tf.stop_gradient(block3)
+        attn_loss = compute_loss(labels, logits)
 
-    #     prelogits, scores, _ = model.attention(block3, training=True)
-    #     _attention_summaries(scores, global_step)
+      # Backprop only through attention weights.
+      _backprop_loss(attn_tape, attn_loss, model.attn_trainable_weights)
 
-    #     # Apply attention block classifier.
-    #     logits = model.attn_classification(prelogits)
+      # Record attention train accuracy.
+      _record_accuracy(attn_train_accuracy, logits, labels)
 
-    #     attn_loss = compute_loss(labels, logits)
+      return desc_loss, attn_loss
 
-    #   # Backprop only through attention weights.
-    #   _backprop_loss(attn_tape, attn_loss, model.attn_trainable_weights)
+    # ------------------------------------------------------------
+    def validation_step(inputs):
+      """Validate one batch."""
+      images, labels = inputs
+      labels = tf.clip_by_value(labels, 0, model.num_classes)
 
-    #   # Record attention train accuracy.
-    #   _record_accuracy(attn_train_accuracy, logits, labels)
+      # Get descriptor predictions.
+      blocks = {}
+      prelogits = model.backbone(images, intermediates_dict=blocks, training=False)
+      logits = model.desc_classification(prelogits, training=False)
+      softmax_probabilities = tf.keras.layers.Softmax()(logits)
 
-    #   return desc_loss, attn_loss
+      validation_loss = loss_object(labels, logits)
+      desc_validation_loss.update_state(validation_loss)
+      desc_validation_accuracy.update_state(labels, softmax_probabilities)
 
-    # # ------------------------------------------------------------
-    # def validation_step(inputs):
-    #   """Validate one batch."""
-    #   images, labels = inputs
-    #   labels = tf.clip_by_value(labels, 0, model.num_classes)
+      # Get attention predictions.
+      block3 = blocks['block3']  # pytype: disable=key-error
+      prelogits, _, _ = model.attention(block3, training=False)
 
-    #   # Get descriptor predictions.
-    #   blocks = {}
-    #   prelogits = model.backbone(
-    #       images, intermediates_dict=blocks, training=False)
-    #   logits = model.desc_classification(prelogits, training=False)
-    #   softmax_probabilities = tf.keras.layers.Softmax()(logits)
+      logits = model.attn_classification(prelogits, training=False)
+      softmax_probabilities = tf.keras.layers.Softmax()(logits)
 
-    #   validation_loss = loss_object(labels, logits)
-    #   desc_validation_loss.update_state(validation_loss)
-    #   desc_validation_accuracy.update_state(labels, softmax_probabilities)
+      validation_loss = loss_object(labels, logits)
+      attn_validation_loss.update_state(validation_loss)
+      attn_validation_accuracy.update_state(labels, softmax_probabilities)
 
-    #   # Get attention predictions.
-    #   block3 = blocks['block3']  # pytype: disable=key-error
-    #   prelogits, _, _ = model.attention(block3, training=False)
+      return desc_validation_accuracy.result(), attn_validation_accuracy.result()
 
-    #   logits = model.attn_classification(prelogits, training=False)
-    #   softmax_probabilities = tf.keras.layers.Softmax()(logits)
+    # `run` replicates the provided computation and runs it
+    # with the distributed input.
+    @tf.function
+    def distributed_train_step(dataset_inputs):
+      """Get the actual losses."""
+      # Each (desc, attn) is a list of 3 losses - crossentropy, reg, total.
+      desc_per_replica_loss, attn_per_replica_loss = (strategy.run(train_step, args=(dataset_inputs,)))
 
-    #   validation_loss = loss_object(labels, logits)
-    #   attn_validation_loss.update_state(validation_loss)
-    #   attn_validation_accuracy.update_state(labels, softmax_probabilities)
+      # Reduce over the replicas.
+      desc_global_loss = strategy.reduce(tf.distribute.ReduceOp.SUM, desc_per_replica_loss, axis=None)
+      attn_global_loss = strategy.reduce(tf.distribute.ReduceOp.SUM, attn_per_replica_loss, axis=None)
 
-    #   return desc_validation_accuracy.result(), attn_validation_accuracy.result(
-    #   )
+      return desc_global_loss, attn_global_loss
 
-    # # `run` replicates the provided computation and runs it
-    # # with the distributed input.
-    # @tf.function
-    # def distributed_train_step(dataset_inputs):
-    #   """Get the actual losses."""
-    #   # Each (desc, attn) is a list of 3 losses - crossentropy, reg, total.
-    #   desc_per_replica_loss, attn_per_replica_loss = (
-    #       strategy.run(train_step, args=(dataset_inputs,)))
+    @tf.function
+    def distributed_validation_step(dataset_inputs):
+      return strategy.run(validation_step, args=(dataset_inputs,))
 
-    #   # Reduce over the replicas.
-    #   desc_global_loss = strategy.reduce(
-    #       tf.distribute.ReduceOp.SUM, desc_per_replica_loss, axis=None)
-    #   attn_global_loss = strategy.reduce(
-    #       tf.distribute.ReduceOp.SUM, attn_per_replica_loss, axis=None)
+    # ------------------------------------------------------------
+    # *** TRAIN LOOP ***
+    with summary_writer.as_default():
+      with tf.summary.record_if(tf.math.equal(0, optimizer.iterations % report_interval)):
 
-    #   return desc_global_loss, attn_global_loss
+        global_step_value = optimizer.iterations.numpy()
+        while global_step_value < max_iters:
 
-    # @tf.function
-    # def distributed_validation_step(dataset_inputs):
-    #   return strategy.run(validation_step, args=(dataset_inputs,))
+          # input_batch : images(b, h, w, c), labels(b,).
+          try:
+            input_batch = train_iterator.get_next()
+            images, labels = input_batch
+            print(images)
+          except tf.errors.OutOfRangeError:
+            # Break if we run out of data in the dataset.
+            logging.info('Stopping training at global step %d, no more data', global_step_value)
+            break
 
-    # # ------------------------------------------------------------
-    # # *** TRAIN LOOP ***
-    # with summary_writer.as_default():
-    #   with tf.summary.record_if(
-    #       tf.math.equal(0, optimizer.iterations % report_interval)):
+          # Set learning rate for optimizer to use.
+          global_step = optimizer.iterations
+          global_step_value = global_step.numpy()
 
-    #     global_step_value = optimizer.iterations.numpy()
-    #     while global_step_value < max_iters:
+          learning_rate = _learning_rate_schedule(global_step_value, max_iters, initial_lr)
+          optimizer.learning_rate = learning_rate
+          tf.summary.scalar('learning_rate', optimizer.learning_rate, step=global_step)
 
-    #       # input_batch : images(b, h, w, c), labels(b,).
-    #       try:
-    #         input_batch = train_iterator.get_next()
-    #       except tf.errors.OutOfRangeError:
-    #         # Break if we run out of data in the dataset.
-    #         logging.info('Stopping training at global step %d, no more data',
-    #                      global_step_value)
-    #         break
+          # Run the training step over num_gpu gpus.
+          desc_dist_loss, attn_dist_loss = distributed_train_step(input_batch)
 
-    #       # Set learning rate for optimizer to use.
-    #       global_step = optimizer.iterations
-    #       global_step_value = global_step.numpy()
+          # Log losses and accuracies to tensorboard.
+          tf.summary.scalar(
+              'loss/desc/crossentropy', desc_dist_loss, step=global_step)
+          tf.summary.scalar(
+              'loss/attn/crossentropy', attn_dist_loss, step=global_step)
+          tf.summary.scalar(
+              'train_accuracy/desc',
+              desc_train_accuracy.result(),
+              step=global_step)
+          tf.summary.scalar(
+              'train_accuracy/attn',
+              attn_train_accuracy.result(),
+              step=global_step)
 
-    #       learning_rate = _learning_rate_schedule(global_step_value, max_iters,
-    #                                               initial_lr)
-    #       optimizer.learning_rate = learning_rate
-    #       tf.summary.scalar(
-    #           'learning_rate', optimizer.learning_rate, step=global_step)
+          # Print to console if running locally.
+          if FLAGS.debug:
+            if global_step_value % report_interval == 0:
+              print(global_step.numpy())
+              print('desc:', desc_dist_loss.numpy())
+              print('attn:', attn_dist_loss.numpy())
 
-    #       # Run the training step over num_gpu gpus.
-    #       desc_dist_loss, attn_dist_loss = distributed_train_step(input_batch)
+          # Validate once in {eval_interval*n, n \in N} steps.
+          if global_step_value % eval_interval == 0:
+            for i in range(num_eval):
+              try:
+                validation_batch = validation_iterator.get_next()
+                desc_validation_result, attn_validation_result = (
+                    distributed_validation_step(validation_batch))
+              except tf.errors.OutOfRangeError:
+                logging.info('Stopping eval at batch %d, no more data', i)
+                break
 
-    #       # Log losses and accuracies to tensorboard.
-    #       tf.summary.scalar(
-    #           'loss/desc/crossentropy', desc_dist_loss, step=global_step)
-    #       tf.summary.scalar(
-    #           'loss/attn/crossentropy', attn_dist_loss, step=global_step)
-    #       tf.summary.scalar(
-    #           'train_accuracy/desc',
-    #           desc_train_accuracy.result(),
-    #           step=global_step)
-    #       tf.summary.scalar(
-    #           'train_accuracy/attn',
-    #           attn_train_accuracy.result(),
-    #           step=global_step)
+            # Log validation results to tensorboard.
+            tf.summary.scalar(
+                'validation/desc', desc_validation_result, step=global_step)
+            tf.summary.scalar(
+                'validation/attn', attn_validation_result, step=global_step)
 
-    #       # Print to console if running locally.
-    #       if FLAGS.debug:
-    #         if global_step_value % report_interval == 0:
-    #           print(global_step.numpy())
-    #           print('desc:', desc_dist_loss.numpy())
-    #           print('attn:', attn_dist_loss.numpy())
+            logging.info('\nValidation(%f)\n', global_step_value)
+            logging.info(': desc: %f\n', desc_validation_result.numpy())
+            logging.info(': attn: %f\n', attn_validation_result.numpy())
+            # Print to console.
+            if FLAGS.debug:
+              print('Validation: desc:', desc_validation_result.numpy())
+              print('          : attn:', attn_validation_result.numpy())
 
-    #       # Validate once in {eval_interval*n, n \in N} steps.
-    #       if global_step_value % eval_interval == 0:
-    #         for i in range(num_eval):
-    #           try:
-    #             validation_batch = validation_iterator.get_next()
-    #             desc_validation_result, attn_validation_result = (
-    #                 distributed_validation_step(validation_batch))
-    #           except tf.errors.OutOfRangeError:
-    #             logging.info('Stopping eval at batch %d, no more data', i)
-    #             break
+          # Save checkpoint once (each save_interval*n, n \in N) steps.
+          if global_step_value % save_interval == 0:
+            save_path = manager.save()
+            logging.info('Saved({global_step_value}) at %s', save_path)
 
-    #         # Log validation results to tensorboard.
-    #         tf.summary.scalar(
-    #             'validation/desc', desc_validation_result, step=global_step)
-    #         tf.summary.scalar(
-    #             'validation/attn', attn_validation_result, step=global_step)
+            file_path = '%s/delf_weights' % FLAGS.logdir
+            model.save_weights(file_path, save_format='tf')
+            logging.info('Saved weights({global_step_value}) at %s', file_path)
 
-    #         logging.info('\nValidation(%f)\n', global_step_value)
-    #         logging.info(': desc: %f\n', desc_validation_result.numpy())
-    #         logging.info(': attn: %f\n', attn_validation_result.numpy())
-    #         # Print to console.
-    #         if FLAGS.debug:
-    #           print('Validation: desc:', desc_validation_result.numpy())
-    #           print('          : attn:', attn_validation_result.numpy())
+          # Reset metrics for next step.
+          desc_train_accuracy.reset_states()
+          attn_train_accuracy.reset_states()
+          desc_validation_loss.reset_states()
+          attn_validation_loss.reset_states()
+          desc_validation_accuracy.reset_states()
+          attn_validation_accuracy.reset_states()
 
-    #       # Save checkpoint once (each save_interval*n, n \in N) steps.
-    #       if global_step_value % save_interval == 0:
-    #         save_path = manager.save()
-    #         logging.info('Saved({global_step_value}) at %s', save_path)
+          if global_step.numpy() > max_iters:
+            break
 
-    #         file_path = '%s/delf_weights' % FLAGS.logdir
-    #         model.save_weights(file_path, save_format='tf')
-    #         logging.info('Saved weights({global_step_value}) at %s', file_path)
-
-    #       # Reset metrics for next step.
-    #       desc_train_accuracy.reset_states()
-    #       attn_train_accuracy.reset_states()
-    #       desc_validation_loss.reset_states()
-    #       attn_validation_loss.reset_states()
-    #       desc_validation_accuracy.reset_states()
-    #       attn_validation_accuracy.reset_states()
-
-    #       if global_step.numpy() > max_iters:
-    #         break
-
-    # logging.info('Finished training for %d steps.', max_iters)
+    logging.info('Finished training for %d steps.', max_iters)
 
 
 if __name__ == '__main__':
