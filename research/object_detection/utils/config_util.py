@@ -19,7 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 
 from google.protobuf import text_format
 
@@ -140,6 +140,35 @@ def get_configs_from_pipeline_file(pipeline_config_path, config_override=None):
   if config_override:
     text_format.Merge(config_override, pipeline_config)
   return create_configs_from_pipeline_proto(pipeline_config)
+
+
+def clear_fine_tune_checkpoint(pipeline_config_path,
+                               new_pipeline_config_path):
+  """Clears fine_tune_checkpoint and writes a new pipeline config file."""
+  configs = get_configs_from_pipeline_file(pipeline_config_path)
+  configs["train_config"].fine_tune_checkpoint = ""
+  configs["train_config"].load_all_detection_checkpoint_vars = False
+  pipeline_proto = create_pipeline_proto_from_configs(configs)
+  with tf.gfile.Open(new_pipeline_config_path, "wb") as f:
+    f.write(text_format.MessageToString(pipeline_proto))
+
+
+def update_fine_tune_checkpoint_type(train_config):
+  """Set `fine_tune_checkpoint_type` using `from_detection_checkpoint`.
+
+  `train_config.from_detection_checkpoint` field is deprecated. For backward
+  compatibility, this function sets `train_config.fine_tune_checkpoint_type`
+  based on `train_config.from_detection_checkpoint`.
+
+  Args:
+    train_config: train_pb2.TrainConfig proto object.
+
+  """
+  if not train_config.fine_tune_checkpoint_type:
+    if train_config.from_detection_checkpoint:
+      train_config.fine_tune_checkpoint_type = "detection"
+    else:
+      train_config.fine_tune_checkpoint_type = "classification"
 
 
 def create_configs_from_pipeline_proto(pipeline_config):

@@ -22,16 +22,16 @@ from __future__ import print_function
 import os
 import numpy as np
 from six.moves import range
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 
 from google.protobuf import text_format
 
 from object_detection.builders import dataset_builder
 from object_detection.core import standard_fields as fields
+from object_detection.dataset_tools import seq_example_util
 from object_detection.protos import input_reader_pb2
 from object_detection.utils import dataset_util
 from object_detection.utils import test_case
-
 
 # pylint: disable=g-import-not-at-top
 try:
@@ -43,15 +43,17 @@ except ImportError:
 
 
 def get_iterator_next_for_testing(dataset, is_tf2):
+  iterator = dataset.make_initializable_iterator()
+  if not is_tf2:
+    tf.add_to_collection(tf.GraphKeys.TABLE_INITIALIZERS, iterator.initializer)
+  return iterator.get_next()
 
-  # In TF2, lookup tables are not supported in one shot iterators, but
-  # initialization is implicit.
-  if is_tf2:
-    return dataset.make_initializable_iterator().get_next()
-  # In TF1, we use one shot iterator because it does not require running
-  # a separate init op.
-  else:
-    return dataset.make_one_shot_iterator().get_next()
+
+def _get_labelmap_path():
+  """Returns an absolute path to label map file."""
+  parent_path = os.path.dirname(tf.resource_loader.get_data_files_path())
+  return os.path.join(parent_path, 'data',
+                      'pet_label_map.pbtxt')
 
 
 class DatasetBuilderTest(test_case.TestCase):
@@ -111,6 +113,57 @@ class DatasetBuilderTest(test_case.TestCase):
 
     return os.path.join(self.get_temp_dir(), '?????.tfrecord')
 
+  def _make_random_serialized_jpeg_images(self, num_frames, image_height,
+                                          image_width):
+    def graph_fn():
+      images = tf.cast(tf.random.uniform(
+          [num_frames, image_height, image_width, 3],
+          maxval=256,
+          dtype=tf.int32), dtype=tf.uint8)
+      images_list = tf.unstack(images, axis=0)
+      encoded_images_list = [tf.io.encode_jpeg(image) for image in images_list]
+      return encoded_images_list
+
+    encoded_images = self.execute(graph_fn, [])
+    return encoded_images
+
+  def create_tf_record_sequence_example(self):
+    path = os.path.join(self.get_temp_dir(), 'seq_tfrecord')
+    writer = tf.python_io.TFRecordWriter(path)
+
+    num_frames = 4
+    image_height = 4
+    image_width = 5
+    image_source_ids = [str(i) for i in range(num_frames)]
+    with self.test_session():
+      encoded_images = self._make_random_serialized_jpeg_images(
+          num_frames, image_height, image_width)
+      sequence_example_serialized = seq_example_util.make_sequence_example(
+          dataset_name='video_dataset',
+          video_id='video',
+          encoded_images=encoded_images,
+          image_height=image_height,
+          image_width=image_width,
+          image_source_ids=image_source_ids,
+          image_format='JPEG',
+          is_annotated=[[1], [1], [1], [1]],
+          bboxes=[
+              [[]],  # Frame 0.
+              [[0., 0., 1., 1.]],  # Frame 1.
+              [[0., 0., 1., 1.],
+               [0.1, 0.1, 0.2, 0.2]],  # Frame 2.
+              [[]],  # Frame 3.
+          ],
+          label_strings=[
+              [],  # Frame 0.
+              ['Abyssinian'],  # Frame 1.
+              ['Abyssinian', 'american_bulldog'],  # Frame 2.
+              [],  # Frame 3
+          ]).SerializeToString()
+      writer.write(sequence_example_serialized)
+      writer.close()
+    return path
+
   def test_build_tf_record_input_reader(self):
     tf_record_path = self.create_tf_record()
 
@@ -142,6 +195,71 @@ class DatasetBuilderTest(test_case.TestCase):
     self.assertAllEqual(
         [0.0, 0.0, 1.0, 1.0],
         output_dict[fields.InputDataFields.groundtruth_boxes][0][0])
+
+  def get_mock_reduce_to_frame_fn(self):
+    def mock_reduce_to_frame_fn(dataset, dataset_map_fn, batch_size, config):
+      def get_frame(tensor_dict):
+        out_tensor_dict = {}
+        out_tensor_dict[fields.InputDataFields.source_id] = (
+            tensor_dict[fields.InputDataFields.source_id][0])
+        return out_tensor_dict
+      return dataset_map_fn(dataset, get_frame, batch_size, config)
+    return mock_reduce_to_frame_fn
+
+  def test_build_tf_record_input_reader_sequence_example_train(self):
+    tf_record_path = self.create_tf_record_sequence_example()
+    label_map_path = _get_labelmap_path()
+    input_type = 'TF_SEQUENCE_EXAMPLE'
+    input_reader_text_proto = """
+      shuffle: false
+      num_readers: 1
+      input_type: {1}
+      tf_record_input_reader {{
+        input_path: '{0}'
+      }}
+    """.format(tf_record_path, input_type)
+    input_reader_proto = input_reader_pb2.InputReader()
+    input_reader_proto.label_map_path = label_map_path
+    text_format.Merge(input_reader_text_proto, input_reader_proto)
+    reduce_to_frame_fn = self.get_mock_reduce_to_frame_fn()
+
+    def graph_fn():
+      return get_iterator_next_for_testing(
+          dataset_builder.build(input_reader_proto, batch_size=1,
+                                reduce_to_frame_fn=reduce_to_frame_fn),
+          self.is_tf2())
+
+    output_dict = self.execute(graph_fn, [])
+
+    self.assertEqual((1,),
+                     output_dict[fields.InputDataFields.source_id].shape)
+
+  def test_build_tf_record_input_reader_sequence_example_test(self):
+    tf_record_path = self.create_tf_record_sequence_example()
+    input_type = 'TF_SEQUENCE_EXAMPLE'
+    label_map_path = _get_labelmap_path()
+    input_reader_text_proto = """
+      shuffle: false
+      num_readers: 1
+      input_type: {1}
+      tf_record_input_reader {{
+        input_path: '{0}'
+      }}
+    """.format(tf_record_path, input_type)
+    input_reader_proto = input_reader_pb2.InputReader()
+    text_format.Merge(input_reader_text_proto, input_reader_proto)
+    input_reader_proto.label_map_path = label_map_path
+    reduce_to_frame_fn = self.get_mock_reduce_to_frame_fn()
+    def graph_fn():
+      return get_iterator_next_for_testing(
+          dataset_builder.build(input_reader_proto, batch_size=1,
+                                reduce_to_frame_fn=reduce_to_frame_fn),
+          self.is_tf2())
+
+    output_dict = self.execute(graph_fn, [])
+
+    self.assertEqual((1,),
+                     output_dict[fields.InputDataFields.source_id].shape)
 
   def test_build_tf_record_input_reader_and_load_instance_masks(self):
     tf_record_path = self.create_tf_record()
@@ -272,7 +390,7 @@ class DatasetBuilderTest(test_case.TestCase):
       return iter1.get_next(), iter2.get_next()
 
     output_dict1, output_dict2 = self.execute(graph_fn, [])
-    self.assertAllEqual(['0'], output_dict1[fields.InputDataFields.source_id])
+    self.assertAllEqual([b'0'], output_dict1[fields.InputDataFields.source_id])
     self.assertEqual([b'1'], output_dict2[fields.InputDataFields.source_id])
 
   def test_sample_one_of_n_shards(self):
@@ -419,8 +537,15 @@ class ReadDatasetTest(test_case.TestCase):
     def graph_fn():
       keys = [1, 0, -1]
       dataset = tf.data.Dataset.from_tensor_slices([[1, 2, -1, 5]])
-      table = contrib_lookup.HashTable(
-          initializer=contrib_lookup.KeyValueTensorInitializer(
+      try:
+        # Dynamically try to load the tf v2 lookup, falling back to contrib
+        lookup = tf.compat.v2.lookup
+        hash_table_class = tf.compat.v2.lookup.StaticHashTable
+      except AttributeError:
+        lookup = contrib_lookup
+        hash_table_class = contrib_lookup.HashTable
+      table = hash_table_class(
+          initializer=lookup.KeyValueTensorInitializer(
               keys=keys, values=list(reversed(keys))),
           default_value=100)
       dataset = dataset.map(table.lookup)
@@ -441,7 +566,7 @@ class ReadDatasetTest(test_case.TestCase):
     data = self.execute(graph_fn, [])
     # Note that the execute function extracts single outputs if the return
     # value is of size 1.
-    self.assertAllEqual(
+    self.assertCountEqual(
         data, [
             1, 10, 2, 20, 3, 30, 4, 40, 5, 50, 1, 10, 2, 20, 3, 30, 4, 40, 5,
             50
@@ -459,7 +584,7 @@ class ReadDatasetTest(test_case.TestCase):
     data = self.execute(graph_fn, [])
     # Note that the execute function extracts single outputs if the return
     # value is of size 1.
-    self.assertAllEqual(
+    self.assertCountEqual(
         data, [
             1, 10, 2, 20, 3, 30, 4, 40, 5, 50, 1, 10, 2, 20, 3, 30, 4, 40, 5,
             50
@@ -489,12 +614,14 @@ class ReadDatasetTest(test_case.TestCase):
     def graph_fn():
       return self._get_dataset_next(
           [self._shuffle_path_template % '*'], config, batch_size=10)
-    expected_non_shuffle_output = [0, 0, 0, 0, 0, 1, 1, 1, 1, 1]
+    expected_non_shuffle_output1 = [0, 0, 0, 0, 0, 1, 1, 1, 1, 1]
+    expected_non_shuffle_output2 = [1, 1, 1, 1, 1, 0, 0, 0, 0, 0]
 
     # Note that the execute function extracts single outputs if the return
     # value is of size 1.
     data = self.execute(graph_fn, [])
-    self.assertAllEqual(data, expected_non_shuffle_output)
+    self.assertTrue(all(data == expected_non_shuffle_output1) or
+                    all(data == expected_non_shuffle_output2))
 
   def test_read_dataset_single_epoch(self):
     config = input_reader_pb2.InputReader()

@@ -36,7 +36,7 @@ import PIL.ImageFont as ImageFont
 import six
 from six.moves import range
 from six.moves import zip
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 
 from object_detection.core import keypoint_ops
 from object_detection.core import standard_fields as fields
@@ -1045,9 +1045,9 @@ def visualize_boxes_and_labels_on_image_array(
             display_str = str(class_name)
         if not skip_scores:
           if not display_str:
-            display_str = '{}%'.format(int(100*scores[i]))
+            display_str = '{}%'.format(round(100*scores[i]))
           else:
-            display_str = '{}: {}%'.format(display_str, int(100*scores[i]))
+            display_str = '{}: {}%'.format(display_str, round(100*scores[i]))
         if not skip_track_ids and track_ids is not None:
           if not display_str:
             display_str = 'ID {}'.format(track_ids[i])

@@ -235,9 +235,6 @@ def initialize(params: base_configs.ExperimentConfig,
   else:
     data_format = 'channels_last'
   tf.keras.backend.set_image_data_format(data_format)
-  distribution_utils.configure_cluster(
-      params.runtime.worker_hosts,
-      params.runtime.task_index)
   if params.runtime.run_eagerly:
     # Enable eager execution to allow step-by-step debugging
     tf.config.experimental_run_functions_eagerly(True)
@@ -296,6 +293,10 @@ def train_and_eval(
   """Runs the train and eval path using compile/fit."""
   logging.info('Running train and eval.')
 
+  distribution_utils.configure_cluster(
+      params.runtime.worker_hosts,
+      params.runtime.task_index)
+
   # Note: for TPUs, strategy and scope should be created before the dataset
   strategy = strategy_override or distribution_utils.get_distribution_strategy(
       distribution_strategy=params.runtime.distribution_strategy,
@@ -333,14 +334,17 @@ def train_and_eval(
     learning_rate = optimizer_factory.build_learning_rate(
         params=params.model.learning_rate,
         batch_size=train_builder.global_batch_size,
+        train_epochs=train_epochs,
         train_steps=train_steps)
     optimizer = optimizer_factory.build_optimizer(
         optimizer_name=params.model.optimizer.name,
         base_learning_rate=learning_rate,
-        params=params.model.optimizer.as_dict())
+        params=params.model.optimizer.as_dict(),
+        model=model)
 
     metrics_map = _get_metrics(one_hot)
     metrics = [metrics_map[metric] for metric in params.train.metrics]
+    steps_per_loop = train_steps if params.train.set_epoch_loop else 1
 
     if one_hot:
       loss_obj = tf.keras.losses.CategoricalCrossentropy(
@@ -350,7 +354,7 @@ def train_and_eval(
     model.compile(optimizer=optimizer,
                   loss=loss_obj,
                   metrics=metrics,
-                  experimental_steps_per_execution=params.train.steps_per_loop)
+                  experimental_steps_per_execution=steps_per_loop)
 
     initial_epoch = 0
     if params.train.resume_checkpoint:
