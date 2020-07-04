@@ -35,14 +35,14 @@ import tensorflow_probability as tfp
 from delf.python.training.datasets import googlelandmarks as gld
 from delf.python.training.model import delf_model
 
-def del_all_flags(FLAGS):
-    flags_dict = FLAGS._flags()
-    keys_list = [keys for keys in flags_dict]
-    for keys in keys_list:
-        FLAGS.delattr(keys)
-del_all_flags(flags.FLAGS)
+# def del_all_flags(FLAGS):
+#     flags_dict = FLAGS._flags()
+#     keys_list = [keys for keys in flags_dict]
+#     for keys in keys_list:
+#         FLAGS.delattr(keys)
+# del_all_flags(flags.FLAGS)
 
-FLAGS = flags.FLAGS
+# FLAGS = flags.FLAGS
 
 flags.DEFINE_boolean('debug', False, 'Debug mode.')
 flags.DEFINE_string('logdir', '/tmp/delf', 'WithTensorBoard logdir.')
@@ -54,7 +54,7 @@ flags.DEFINE_enum(
     'dataset_version', 'gld_v1', ['gld_v1', 'gld_v2', 'gld_v2_clean'],
     'Google Landmarks dataset version, used to determine the'
     'number of classes.')
-flags.DEFINE_integer('seed', 0, 'Seed to training dataset.')
+# flags.DEFINE_integer('seed', 0, 'Seed to training dataset.')
 flags.DEFINE_float('initial_lr', 0.01, 'Initial learning rate.')
 flags.DEFINE_integer('batch_size', 32, 'Global batch size.')
 flags.DEFINE_integer('max_iters', 500000, 'Maximum iterations.')
