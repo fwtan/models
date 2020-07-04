@@ -35,6 +35,13 @@ import tensorflow_probability as tfp
 from delf.python.training.datasets import googlelandmarks as gld
 from delf.python.training.model import delf_model
 
+def del_all_flags(FLAGS):
+    flags_dict = FLAGS._flags()
+    keys_list = [keys for keys in flags_dict]
+    for keys in keys_list:
+        FLAGS.delattr(keys)
+del_all_flags(flags.FLAGS)
+
 FLAGS = flags.FLAGS
 
 flags.DEFINE_boolean('debug', False, 'Debug mode.')
