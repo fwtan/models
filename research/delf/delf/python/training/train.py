@@ -42,7 +42,7 @@ from delf.python.training.model import delf_model
 #         FLAGS.delattr(keys)
 # del_all_flags(flags.FLAGS)
 
-# FLAGS = flags.FLAGS
+FLAGS = flags.FLAGS
 
 flags.DEFINE_boolean('debug', False, 'Debug mode.')
 flags.DEFINE_string('logdir', '/tmp/delf', 'WithTensorBoard logdir.')
