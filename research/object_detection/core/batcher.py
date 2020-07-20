@@ -21,13 +21,9 @@ from __future__ import print_function
 import collections
 
 from six.moves import range
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 
 from object_detection.core import prefetcher
-from object_detection.utils import tf_version
-
-if not tf_version.is_tf1():
-  raise ValueError('`batcher.py` is only supported in Tensorflow 1.X')
 
 rt_shape_str = '_runtime_shapes'
 

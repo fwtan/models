@@ -18,9 +18,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import collections
-import numpy as np
-from absl import logging
 import tensorflow as tf
 
 from tensorflow.python.keras import backend
@@ -60,7 +57,7 @@ class RetinanetModel(base_model.Model):
         params.postprocess)
 
     self._transpose_input = params.train.transpose_input
-    assert not self._transpose_input, 'Transpose input is not supportted.'
+    assert not self._transpose_input, 'Transpose input is not supported.'
     # Input layer.
     input_shape = (
         params.retinanet_parser.output_size +

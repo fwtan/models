@@ -154,14 +154,18 @@ def create_classifier_dataset(file_path,
                               seq_length,
                               batch_size,
                               is_training=True,
-                              input_pipeline_context=None):
+                              input_pipeline_context=None,
+                              label_type=tf.int64,
+                              include_sample_weights=False):
   """Creates input dataset from (tf)records files for train/eval."""
   name_to_features = {
       'input_ids': tf.io.FixedLenFeature([seq_length], tf.int64),
       'input_mask': tf.io.FixedLenFeature([seq_length], tf.int64),
       'segment_ids': tf.io.FixedLenFeature([seq_length], tf.int64),
-      'label_ids': tf.io.FixedLenFeature([], tf.int64),
+      'label_ids': tf.io.FixedLenFeature([], label_type),
   }
+  if include_sample_weights:
+    name_to_features['weight'] = tf.io.FixedLenFeature([], tf.float32)
   dataset = single_file_dataset(file_path, name_to_features)
 
   # The dataset is always sharded by number of hosts.
@@ -177,6 +181,9 @@ def create_classifier_dataset(file_path,
         'input_type_ids': record['segment_ids']
     }
     y = record['label_ids']
+    if include_sample_weights:
+      w = record['weight']
+      return (x, y, w)
     return (x, y)
 
   if is_training:
@@ -238,5 +245,41 @@ def create_squad_dataset(file_path,
       _select_data_from_record,
       num_parallel_calls=tf.data.experimental.AUTOTUNE)
   dataset = dataset.batch(batch_size, drop_remainder=True)
+  dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
+  return dataset
+
+
+def create_retrieval_dataset(file_path,
+                             seq_length,
+                             batch_size,
+                             input_pipeline_context=None):
+  """Creates input dataset from (tf)records files for scoring."""
+  name_to_features = {
+      'input_ids': tf.io.FixedLenFeature([seq_length], tf.int64),
+      'input_mask': tf.io.FixedLenFeature([seq_length], tf.int64),
+      'segment_ids': tf.io.FixedLenFeature([seq_length], tf.int64),
+      'int_iden': tf.io.FixedLenFeature([1], tf.int64),
+  }
+  dataset = single_file_dataset(file_path, name_to_features)
+
+  # The dataset is always sharded by number of hosts.
+  # num_input_pipelines is the number of hosts rather than number of cores.
+  if input_pipeline_context and input_pipeline_context.num_input_pipelines > 1:
+    dataset = dataset.shard(input_pipeline_context.num_input_pipelines,
+                            input_pipeline_context.input_pipeline_id)
+
+  def _select_data_from_record(record):
+    x = {
+        'input_word_ids': record['input_ids'],
+        'input_mask': record['input_mask'],
+        'input_type_ids': record['segment_ids']
+    }
+    y = record['int_iden']
+    return (x, y)
+
+  dataset = dataset.map(
+      _select_data_from_record,
+      num_parallel_calls=tf.data.experimental.AUTOTUNE)
+  dataset = dataset.batch(batch_size, drop_remainder=False)
   dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
   return dataset

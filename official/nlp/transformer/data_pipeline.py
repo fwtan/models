@@ -51,13 +51,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import math
 import os
 
 from absl import logging
 import tensorflow as tf
 
-from official.nlp.transformer import misc
 from official.utils.misc import model_helpers
 
 # Buffer size for reading records from a TFRecord file. Each training file is
@@ -157,7 +155,7 @@ def _batch_examples(dataset, batch_size, max_length):
 
   # Create list of batch sizes for each bucket_id, so that
   # bucket_batch_size[bucket_id] * buckets_max[bucket_id] <= batch_size
-  bucket_batch_sizes = [batch_size // x for x in buckets_max]
+  bucket_batch_sizes = [int(batch_size) // x for x in buckets_max]
   # bucket_id will be a tensor, so convert this list to a tensor as well.
   bucket_batch_sizes = tf.constant(bucket_batch_sizes, dtype=tf.int64)
 
@@ -270,7 +268,8 @@ def _read_and_batch_from_files(
 
 def _generate_synthetic_data(params):
   """Create synthetic data based on the parameter batch size."""
-  batch = length = int(math.sqrt(params["batch_size"]))
+  batch_size = int(params["batch_size"] // params["max_length"])
+  length = params["max_length"]
   dataset = model_helpers.generate_synthetic_data(
       input_shape=tf.TensorShape([length]),
       input_value=1,
@@ -279,7 +278,11 @@ def _generate_synthetic_data(params):
       label_value=1,
       label_dtype=tf.int64,
   )
-  return dataset.batch(batch, drop_remainder=True)
+  if params["static_batch"]:
+    dataset = dataset.batch(batch_size, drop_remainder=True)
+  else:
+    dataset = dataset.padded_batch(batch_size, ([None], [None]))
+  return dataset
 
 
 def train_input_fn(params, ctx=None):
@@ -309,9 +312,5 @@ def eval_input_fn(params, ctx=None):
 def map_data_for_transformer_fn(x, y):
   """Maps data for training, and handles weried behaviors for different vers."""
   # Will transform input x and targets y into tuple(x, y) as new model inputs.
-  if misc.is_v2():
-    # For TF v2, the 2nd parameter is omitted to make Keras training work.
-    return ((x, y),)
-  else:
-    # For TF v1, Keras requires a dummy placeholder as the 2nd parameter.
-    return ((x, y), tf.constant(0.0))
+  # For TF v2, the 2nd parameter is omitted to make Keras training work.
+  return ((x, y),)

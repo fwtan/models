@@ -96,7 +96,8 @@ configured in the meta architecture:
 from __future__ import print_function
 import abc
 import functools
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+import tf_slim as slim
 
 from object_detection.anchor_generators import grid_anchor_generator
 from object_detection.builders import box_predictor_builder
@@ -112,14 +113,6 @@ from object_detection.utils import ops
 from object_detection.utils import shape_utils
 from object_detection.utils import variables_helper
 
-# pylint: disable=g-import-not-at-top
-try:
-  from tensorflow.contrib import framework as contrib_framework
-  from tensorflow.contrib import slim as contrib_slim
-except ImportError:
-  # TF 2.0 doesn't ship with contrib.
-  pass
-# pylint: enable=g-import-not-at-top
 
 _UNINITIALIZED_FEATURE_EXTRACTOR = '__uninitialized__'
 
@@ -267,31 +260,6 @@ class FasterRCNNKerasFeatureExtractor(object):
   def get_box_classifier_feature_extractor_model(self, name):
     """Get model that extracts second stage box classifier features."""
     pass
-
-  def restore_from_classification_checkpoint_fn(
-      self,
-      first_stage_feature_extractor_scope,
-      second_stage_feature_extractor_scope):
-    """Returns a map of variables to load from a foreign checkpoint.
-
-    Args:
-      first_stage_feature_extractor_scope: A scope name for the first stage
-        feature extractor.
-      second_stage_feature_extractor_scope: A scope name for the second stage
-        feature extractor.
-
-    Returns:
-      A dict mapping variable names (to load from a checkpoint) to variables in
-      the model graph.
-    """
-    variables_to_restore = {}
-    for variable in variables_helper.get_global_variables_safely():
-      for scope_name in [first_stage_feature_extractor_scope,
-                         second_stage_feature_extractor_scope]:
-        if variable.op.name.startswith(scope_name):
-          var_name = variable.op.name.replace(scope_name + '/', '')
-          variables_to_restore[var_name] = variable
-    return variables_to_restore
 
 
 class FasterRCNNMetaArch(model.DetectionModel):
@@ -566,10 +534,9 @@ class FasterRCNNMetaArch(model.DetectionModel):
       self._first_stage_box_predictor_arg_scope_fn = (
           first_stage_box_predictor_arg_scope_fn)
       def rpn_box_predictor_feature_extractor(rpn_features_to_crop):
-        with contrib_slim.arg_scope(
-            self._first_stage_box_predictor_arg_scope_fn()):
+        with slim.arg_scope(self._first_stage_box_predictor_arg_scope_fn()):
           reuse = tf.get_variable_scope().reuse
-          return contrib_slim.conv2d(
+          return slim.conv2d(
               rpn_features_to_crop,
               self._first_stage_box_predictor_depth,
               kernel_size=[
@@ -2580,7 +2547,7 @@ class FasterRCNNMetaArch(model.DetectionModel):
       if second_stage_mask_loss is not None:
         mask_loss = tf.multiply(self._second_stage_mask_loss_weight,
                                 second_stage_mask_loss, name='mask_loss')
-        loss_dict[mask_loss.op.name] = mask_loss
+        loss_dict['Loss/BoxClassifierLoss/mask_loss'] = mask_loss
     return loss_dict
 
   def _get_mask_proposal_boxes_and_classes(
@@ -2805,9 +2772,49 @@ class FasterRCNNMetaArch(model.DetectionModel):
           self.first_stage_feature_extractor_scope,
           self.second_stage_feature_extractor_scope
       ]
-    feature_extractor_variables = contrib_framework.filter_variables(
+    feature_extractor_variables = slim.filter_variables(
         variables_to_restore, include_patterns=include_patterns)
     return {var.op.name: var for var in feature_extractor_variables}
+
+  def restore_from_objects(self, fine_tune_checkpoint_type='detection'):
+    """Returns a map of Trackable objects to load from a foreign checkpoint.
+
+    Returns a dictionary of Tensorflow 2 Trackable objects (e.g. tf.Module
+    or Checkpoint). This enables the model to initialize based on weights from
+    another task. For example, the feature extractor variables from a
+    classification model can be used to bootstrap training of an object
+    detector. When loading from an object detection model, the checkpoint model
+    should have the same parameters as this detection model with exception of
+    the num_classes parameter.
+
+    Note that this function is intended to be used to restore Keras-based
+    models when running Tensorflow 2, whereas restore_map (above) is intended
+    to be used to restore Slim-based models when running Tensorflow 1.x.
+
+    Args:
+      fine_tune_checkpoint_type: whether to restore from a full detection
+        checkpoint (with compatible variable names) or to restore from a
+        classification checkpoint for initialization prior to training.
+        Valid values: `detection`, `classification`. Default 'detection'.
+
+    Returns:
+      A dict mapping keys to Trackable objects (tf.Module or Checkpoint).
+    """
+    if fine_tune_checkpoint_type == 'classification':
+      return {
+          'feature_extractor':
+              self._feature_extractor.classification_backbone
+      }
+    elif fine_tune_checkpoint_type == 'detection':
+      fake_model = tf.train.Checkpoint(
+          _feature_extractor_for_box_classifier_features=
+          self._feature_extractor_for_box_classifier_features,
+          _feature_extractor_for_proposal_features=
+          self._feature_extractor_for_proposal_features)
+      return {'model': fake_model}
+    else:
+      raise ValueError('Not supported fine_tune_checkpoint_type: {}'.format(
+          fine_tune_checkpoint_type))
 
   def updates(self):
     """Returns a list of update operators for this model.

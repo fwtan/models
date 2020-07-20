@@ -36,6 +36,9 @@ class BertTokenClassifier(tf.keras.Model):
   instantiates a token classification network based on the passed `num_classes`
   argument.
 
+  *Note* that the model is constructed by
+  [Keras Functional API](https://keras.io/guides/functional_api/).
+
   Arguments:
     network: A transformer network. This network should output a sequence output
       and a classification output. Furthermore, it should expose its embedding
@@ -55,6 +58,7 @@ class BertTokenClassifier(tf.keras.Model):
                dropout_rate=0.1,
                **kwargs):
     self._self_setattr_tracking = False
+    self._network = network
     self._config = {
         'network': network,
         'num_classes': num_classes,
@@ -83,6 +87,10 @@ class BertTokenClassifier(tf.keras.Model):
 
     super(BertTokenClassifier, self).__init__(
         inputs=inputs, outputs=predictions, **kwargs)
+
+  @property
+  def checkpoint_items(self):
+    return dict(encoder=self._network)
 
   def get_config(self):
     return self._config

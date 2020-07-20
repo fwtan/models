@@ -32,9 +32,9 @@ from official.vision.segmentation import unet_model as unet_model_lib
 
 UNET3D_MIN_ACCURACY = 0.90
 UNET3D_MAX_ACCURACY = 0.98
-UNET_TRAINING_FILES = 'unet_training_data_files'
-UNET_EVAL_FILES = 'unet_eval_data_files'
-UNET_MODEL_CONFIG_FILE = 'unet_model_config'
+UNET_TRAINING_FILES = 'gs://mlcompass-data/unet3d/train_data/*'
+UNET_EVAL_FILES = 'gs://mlcompass-data/unet3d/eval_data/*'
+UNET_MODEL_CONFIG_FILE = 'gs://mlcompass-data/unet3d/config/unet_config.yaml'
 
 FLAGS = flags.FLAGS
 
@@ -93,8 +93,11 @@ class Unet3DAccuracyBenchmark(keras_benchmark.KerasBenchmark):
     """Runs and reports the benchmark given the provided configuration."""
     params = unet_training_lib.extract_params(FLAGS)
     strategy = unet_training_lib.create_distribution_strategy(params)
-    if params.use_bfloat16:
-      policy = tf.keras.mixed_precision.experimental.Policy('mixed_bfloat16')
+
+    input_dtype = params.dtype
+    if input_dtype == 'float16' or input_dtype == 'bfloat16':
+      policy = tf.keras.mixed_precision.experimental.Policy(
+          'mixed_bfloat16' if input_dtype == 'bfloat16' else 'mixed_float16')
       tf.keras.mixed_precision.experimental.set_policy(policy)
 
     stats = {}

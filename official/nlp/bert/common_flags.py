@@ -49,10 +49,11 @@ def define_common_bert_flags():
   flags.DEFINE_integer('num_train_epochs', 3,
                        'Total number of training epochs to perform.')
   flags.DEFINE_integer(
-      'steps_per_loop', 1,
+      'steps_per_loop', None,
       'Number of steps per graph-mode loop. Only training step '
       'happens inside the loop. Callbacks will not be called '
-      'inside.')
+      'inside. If not set the value will be configured depending on the '
+      'devices available.')
   flags.DEFINE_float('learning_rate', 5e-5,
                      'The initial learning rate for Adam.')
   flags.DEFINE_float('end_lr', 0.0,
@@ -72,6 +73,9 @@ def define_common_bert_flags():
       'If specified, init_checkpoint flag should not be used.')
   flags.DEFINE_bool('hub_module_trainable', True,
                     'True to make keras layers in the hub module trainable.')
+  flags.DEFINE_string('sub_model_export_name', None,
+                      'If set, `sub_model` checkpoints are exported into '
+                      'FLAGS.model_dir/FLAGS.sub_model_export_name.')
 
   flags_core.define_log_steps()
 

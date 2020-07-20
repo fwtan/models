@@ -66,6 +66,11 @@ class InputDataFields(object):
     groundtruth_keypoint_weights: groundtruth weight factor for keypoints.
     groundtruth_label_weights: groundtruth label weights.
     groundtruth_weights: groundtruth weight factor for bounding boxes.
+    groundtruth_dp_num_points: The number of DensePose sampled points for each
+      instance.
+    groundtruth_dp_part_ids: Part indices for DensePose points.
+    groundtruth_dp_surface_coords: Image locations and UV coordinates for
+      DensePose points.
     num_groundtruth_boxes: number of groundtruth boxes.
     is_annotated: whether an image has been labeled or not.
     true_image_shapes: true shapes of images in the resized images, as resized
@@ -76,6 +81,9 @@ class InputDataFields(object):
       context_features, used for reshaping.
     valid_context_size: the valid context size, used in filtering the padded
       context features.
+    image_format: format for the images, used to decode
+    image_height: height of images, used to decode
+    image_width: width of images, used to decode
   """
   image = 'image'
   image_additional_channels = 'image_additional_channels'
@@ -105,6 +113,9 @@ class InputDataFields(object):
   groundtruth_keypoint_weights = 'groundtruth_keypoint_weights'
   groundtruth_label_weights = 'groundtruth_label_weights'
   groundtruth_weights = 'groundtruth_weights'
+  groundtruth_dp_num_points = 'groundtruth_dp_num_points'
+  groundtruth_dp_part_ids = 'groundtruth_dp_part_ids'
+  groundtruth_dp_surface_coords = 'groundtruth_dp_surface_coords'
   num_groundtruth_boxes = 'num_groundtruth_boxes'
   is_annotated = 'is_annotated'
   true_image_shape = 'true_image_shape'
@@ -112,6 +123,10 @@ class InputDataFields(object):
   context_features = 'context_features'
   context_feature_length = 'context_feature_length'
   valid_context_size = 'valid_context_size'
+  image_timestamps = 'image_timestamps'
+  image_format = 'image_format'
+  image_height = 'image_height'
+  image_width = 'image_width'
 
 
 class DetectionResultFields(object):
@@ -126,6 +141,8 @@ class DetectionResultFields(object):
       for detection boxes in the image including background class.
     detection_classes: detection-level class labels.
     detection_masks: contains a segmentation mask for each detection box.
+    detection_surface_coords: contains DensePose surface coordinates for each
+      box.
     detection_boundaries: contains an object boundary for each detection box.
     detection_keypoints: contains detection keypoints for each detection box.
     detection_keypoint_scores: contains detection keypoint scores.
@@ -146,6 +163,7 @@ class DetectionResultFields(object):
   detection_features = 'detection_features'
   detection_classes = 'detection_classes'
   detection_masks = 'detection_masks'
+  detection_surface_coords = 'detection_surface_coords'
   detection_boundaries = 'detection_boundaries'
   detection_keypoints = 'detection_keypoints'
   detection_keypoint_scores = 'detection_keypoint_scores'
@@ -167,7 +185,11 @@ class BoxListFields(object):
     masks: masks per bounding box.
     boundaries: boundaries per bounding box.
     keypoints: keypoints per bounding box.
+    keypoint_visibilities: keypoint visibilities per bounding box.
     keypoint_heatmaps: keypoint heatmaps per bounding box.
+    densepose_num_points: number of DensePose points per bounding box.
+    densepose_part_ids: DensePose part ids per bounding box.
+    densepose_surface_coords: DensePose surface coordinates per bounding box.
     is_crowd: is_crowd annotation per bounding box.
   """
   boxes = 'boxes'
@@ -181,7 +203,11 @@ class BoxListFields(object):
   keypoints = 'keypoints'
   keypoint_visibilities = 'keypoint_visibilities'
   keypoint_heatmaps = 'keypoint_heatmaps'
+  densepose_num_points = 'densepose_num_points'
+  densepose_part_ids = 'densepose_part_ids'
+  densepose_surface_coords = 'densepose_surface_coords'
   is_crowd = 'is_crowd'
+  group_of = 'group_of'
 
 
 class PredictionFields(object):
@@ -279,3 +305,14 @@ class TfExampleFields(object):
   detection_bbox_ymax = 'image/detection/bbox/ymax'
   detection_bbox_xmax = 'image/detection/bbox/xmax'
   detection_score = 'image/detection/score'
+
+# Sequence fields for SequenceExample inputs.
+# All others are considered context fields.
+SEQUENCE_FIELDS = [InputDataFields.image,
+                   InputDataFields.source_id,
+                   InputDataFields.groundtruth_boxes,
+                   InputDataFields.num_groundtruth_boxes,
+                   InputDataFields.groundtruth_classes,
+                   InputDataFields.groundtruth_weights,
+                   InputDataFields.source_id,
+                   InputDataFields.is_annotated]

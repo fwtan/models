@@ -32,8 +32,11 @@ class BertSpanLabeler(tf.keras.Model):
   encoder as described in "BERT: Pre-training of Deep Bidirectional Transformers
   for Language Understanding" (https://arxiv.org/abs/1810.04805).
 
-  The BertSpanLabeler allows a user to pass in a transformer stack, and
+  The BertSpanLabeler allows a user to pass in a transformer encoder, and
   instantiates a span labeling network based on a single dense layer.
+
+  *Note* that the model is constructed by
+  [Keras Functional API](https://keras.io/guides/functional_api/).
 
   Arguments:
     network: A transformer network. This network should output a sequence output
@@ -51,11 +54,13 @@ class BertSpanLabeler(tf.keras.Model):
                output='logits',
                **kwargs):
     self._self_setattr_tracking = False
+    self._network = network
     self._config = {
         'network': network,
         'initializer': initializer,
         'output': output,
     }
+
     # We want to use the inputs of the passed network as the inputs to this
     # Model. To do this, we need to keep a handle to the network inputs for use
     # when we construct the Model object at the end of init.
@@ -88,6 +93,10 @@ class BertSpanLabeler(tf.keras.Model):
 
     super(BertSpanLabeler, self).__init__(
         inputs=inputs, outputs=logits, **kwargs)
+
+  @property
+  def checkpoint_items(self):
+    return dict(encoder=self._network)
 
   def get_config(self):
     return self._config

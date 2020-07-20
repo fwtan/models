@@ -22,7 +22,7 @@ from __future__ import print_function
 
 from six.moves import range
 from six.moves import zip
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 
 from object_detection.meta_architectures import ssd_meta_arch
 from object_detection.models import feature_map_generators
@@ -245,17 +245,6 @@ class SSDResNetV1FpnKerasFeatureExtractor(
         last_feature_map = layer(last_feature_map)
       feature_maps.append(last_feature_map)
     return feature_maps
-
-  def restore_from_classification_checkpoint_fn(self, feature_extractor_scope):
-    """Returns a map for restoring from an (object-based) checkpoint.
-
-    Args:
-      feature_extractor_scope: A scope name for the feature extractor (unused).
-
-    Returns:
-      A dict mapping keys to Keras models
-    """
-    return {'feature_extractor': self.classification_backbone}
 
 
 class SSDResNet50V1FpnKerasFeatureExtractor(
