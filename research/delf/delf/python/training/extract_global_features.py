@@ -53,7 +53,7 @@ cmd_args = None
 # Extension of feature files.
 _DELF_EXT = '.delf'
 # Pace to report extraction log.
-_STATUS_CHECK_ITERATIONS = 10
+_STATUS_CHECK_ITERATIONS = 100
 
 
 def _ReadImageList(list_path):
@@ -72,7 +72,6 @@ def _ReadImageList(list_path):
 
 
 def main(unused_argv):
-  # Read list of images.
   print('Reading list of images...')
   image_paths = _ReadImageList(cmd_args.list_images_path)
   num_images = len(image_paths)
@@ -83,8 +82,8 @@ def main(unused_argv):
   ids, embeddings = extractor.get_embeddings(image_paths)
   for i in range(len(ids)):
       image_name = ids[i]
-      output_global_feature_filename = osp.join(cmd_args.output_dir, image_name + _DELF_EXT)
       global_descriptor = embeddings[i]
+      output_global_feature_filename = osp.join(cmd_args.output_dir, image_name + _DELF_EXT)
       datum_io.WriteToFile(global_descriptor, output_global_feature_filename)
       if i % _STATUS_CHECK_ITERATIONS == 0:
           print(i, image_name, global_descriptor.shape)
@@ -93,27 +92,11 @@ def main(unused_argv):
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.register('type', 'bool', lambda v: v.lower() == 'true')
-  parser.add_argument(
-      '--model_path',
-      type=str,
-      default=None,
-      help="""
-      Model.
-      """)
-  parser.add_argument(
-      '--list_images_path',
-      type=str,
-      default='list_images.txt',
-      help="""
-      Path to list of images whose DELF features will be extracted.
-      """)
-  parser.add_argument(
-      '--output_dir',
-      type=str,
-      default='test_features',
-      help="""
-      Directory where DELF features will be written to. Each image's features
-      will be written to a file with same name, and extension replaced by .delf.
-      """)
+  parser.add_argument('--model_path', type=str, default=None, 
+    help="""tensorflow SavedModel""")
+  parser.add_argument('--list_images_path', type=str, default='list_images.txt', 
+    help="""Path to list of images whose DELF features will be extracted.""")
+  parser.add_argument('--output_dir', type=str, default='test_features',
+    help="""Directory where DELF features will be written to. Each image's features will be written to a file with same name, and extension replaced by .delf.""")
   cmd_args, unparsed = parser.parse_known_args()
   app.run(main=main, argv=[sys.argv[0]] + unparsed)
