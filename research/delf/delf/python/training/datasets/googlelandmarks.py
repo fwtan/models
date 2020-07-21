@@ -65,8 +65,7 @@ def NormalizeImages(images, pixel_value_scale=0.5, pixel_value_offset=0.5):
     normalized_images: `Tensor`, normalized images.
   """
   images = tf.cast(images, tf.float32)
-  normalized_images = tf.math.divide(
-      tf.subtract(images, pixel_value_offset), pixel_value_scale)
+  normalized_images = tf.math.divide(tf.subtract(images, pixel_value_offset), pixel_value_scale)
   return normalized_images
 
 
@@ -98,6 +97,7 @@ def _ImageNetCrop(image):
       cropped_image, [params.input_rows, params.input_cols], method='area')
   if params.random_reflection:
     cropped_image = tf.image.random_flip_left_right(cropped_image)
+  cropped_image.set_shape([None, None, 3])
 
   return cropped_image
 

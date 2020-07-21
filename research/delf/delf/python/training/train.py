@@ -35,6 +35,13 @@ import tensorflow_probability as tfp
 from delf.python.training.datasets import googlelandmarks as gld
 from delf.python.training.model import delf_model
 
+# def del_all_flags(FLAGS):
+#     flags_dict = FLAGS._flags()
+#     keys_list = [keys for keys in flags_dict]
+#     for keys in keys_list:
+#         FLAGS.delattr(keys)
+# del_all_flags(flags.FLAGS)
+
 FLAGS = flags.FLAGS
 
 flags.DEFINE_boolean('debug', False, 'Debug mode.')
@@ -74,18 +81,9 @@ def _attention_summaries(scores, global_step):
   tf.summary.scalar('attention/max', tf.reduce_max(scores), step=global_step)
   tf.summary.scalar('attention/min', tf.reduce_min(scores), step=global_step)
   tf.summary.scalar('attention/mean', tf.reduce_mean(scores), step=global_step)
-  tf.summary.scalar(
-      'attention/percent_25',
-      tfp.stats.percentile(scores, 25.0),
-      step=global_step)
-  tf.summary.scalar(
-      'attention/percent_50',
-      tfp.stats.percentile(scores, 50.0),
-      step=global_step)
-  tf.summary.scalar(
-      'attention/percent_75',
-      tfp.stats.percentile(scores, 75.0),
-      step=global_step)
+  tf.summary.scalar('attention/percent_25', tfp.stats.percentile(scores, 25.0), step=global_step)
+  tf.summary.scalar('attention/percent_50', tfp.stats.percentile(scores, 50.0), step=global_step)
+  tf.summary.scalar('attention/percent_75', tfp.stats.percentile(scores, 75.0), step=global_step)
 
 
 def create_model(num_classes):
@@ -180,28 +178,28 @@ def main(argv):
   # ------------------------------------------------------------
   # Finally, we do everything in distributed scope.
   with strategy.scope():
+
+    # input_batch = train_iterator.get_next()
+    # validation_batch = validation_iterator.get_next()
+    # images, labels = validation_batch
+    # print(images)
+    # print(labels)
+
     # Compute loss.
     # Set reduction to `none` so we can do the reduction afterwards and divide
     # by global batch size.
-    loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
-        from_logits=True, reduction=tf.keras.losses.Reduction.NONE)
-
+    loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE)
     def compute_loss(labels, predictions):
       per_example_loss = loss_object(labels, predictions)
-      return tf.nn.compute_average_loss(
-          per_example_loss, global_batch_size=global_batch_size)
+      return tf.nn.compute_average_loss(per_example_loss, global_batch_size=global_batch_size)
 
     # Set up metrics.
     desc_validation_loss = tf.keras.metrics.Mean(name='desc_validation_loss')
     attn_validation_loss = tf.keras.metrics.Mean(name='attn_validation_loss')
-    desc_train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
-        name='desc_train_accuracy')
-    attn_train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
-        name='attn_train_accuracy')
-    desc_validation_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
-        name='desc_validation_accuracy')
-    attn_validation_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
-        name='attn_validation_accuracy')
+    desc_train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='desc_train_accuracy')
+    attn_train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='attn_train_accuracy')
+    desc_validation_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='desc_validation_accuracy')
+    attn_validation_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='attn_validation_accuracy')
 
     # ------------------------------------------------------------
     # Setup DELF model and optimizer.
@@ -211,13 +209,11 @@ def main(argv):
     optimizer = tf.keras.optimizers.SGD(learning_rate=initial_lr, momentum=0.9)
 
     # Setup summary writer.
-    summary_writer = tf.summary.create_file_writer(
-        os.path.join(FLAGS.logdir, 'train_logs'), flush_millis=10000)
+    summary_writer = tf.summary.create_file_writer(os.path.join(FLAGS.logdir, 'train_logs'), flush_millis=10000)
 
     # Setup checkpoint directory.
     checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
-    manager = tf.train.CheckpointManager(
-        checkpoint, checkpoint_prefix, max_to_keep=3)
+    manager = tf.train.CheckpointManager(checkpoint, checkpoint_prefix, max_to_keep=3)
 
     # ------------------------------------------------------------
     # Train step to run on one GPU.
@@ -252,8 +248,7 @@ def main(argv):
       with tf.GradientTape() as desc_tape:
 
         blocks = {}
-        prelogits = model.backbone(
-            images, intermediates_dict=blocks, training=True)
+        prelogits = model.backbone(images, intermediates_dict=blocks, training=True)
 
         # Report sparsity.
         activations_zero_fractions = {
@@ -306,8 +301,7 @@ def main(argv):
 
       # Get descriptor predictions.
       blocks = {}
-      prelogits = model.backbone(
-          images, intermediates_dict=blocks, training=False)
+      prelogits = model.backbone(images, intermediates_dict=blocks, training=False)
       logits = model.desc_classification(prelogits, training=False)
       softmax_probabilities = tf.keras.layers.Softmax()(logits)
 
@@ -326,8 +320,7 @@ def main(argv):
       attn_validation_loss.update_state(validation_loss)
       attn_validation_accuracy.update_state(labels, softmax_probabilities)
 
-      return desc_validation_accuracy.result(), attn_validation_accuracy.result(
-      )
+      return desc_validation_accuracy.result(), attn_validation_accuracy.result()
 
     # `run` replicates the provided computation and runs it
     # with the distributed input.
@@ -335,14 +328,11 @@ def main(argv):
     def distributed_train_step(dataset_inputs):
       """Get the actual losses."""
       # Each (desc, attn) is a list of 3 losses - crossentropy, reg, total.
-      desc_per_replica_loss, attn_per_replica_loss = (
-          strategy.run(train_step, args=(dataset_inputs,)))
+      desc_per_replica_loss, attn_per_replica_loss = (strategy.run(train_step, args=(dataset_inputs,)))
 
       # Reduce over the replicas.
-      desc_global_loss = strategy.reduce(
-          tf.distribute.ReduceOp.SUM, desc_per_replica_loss, axis=None)
-      attn_global_loss = strategy.reduce(
-          tf.distribute.ReduceOp.SUM, attn_per_replica_loss, axis=None)
+      desc_global_loss = strategy.reduce(tf.distribute.ReduceOp.SUM, desc_per_replica_loss, axis=None)
+      attn_global_loss = strategy.reduce(tf.distribute.ReduceOp.SUM, attn_per_replica_loss, axis=None)
 
       return desc_global_loss, attn_global_loss
 
@@ -353,8 +343,7 @@ def main(argv):
     # ------------------------------------------------------------
     # *** TRAIN LOOP ***
     with summary_writer.as_default():
-      with tf.summary.record_if(
-          tf.math.equal(0, optimizer.iterations % report_interval)):
+      with tf.summary.record_if(tf.math.equal(0, optimizer.iterations % report_interval)):
 
         # TODO(dananghel): try to load pretrained weights at backbone creation.
         # Load pretrained weights for ResNet50 trained on ImageNet.
@@ -377,36 +366,27 @@ def main(argv):
             input_batch = next(train_iter)
           except tf.errors.OutOfRangeError:
             # Break if we run out of data in the dataset.
-            logging.info('Stopping training at global step %d, no more data',
-                         global_step_value)
+            logging.info('Stopping training at global step %d, no more data', global_step_value)
             break
 
           # Set learning rate for optimizer to use.
           global_step = optimizer.iterations
           global_step_value = global_step.numpy()
 
-          learning_rate = _learning_rate_schedule(global_step_value, max_iters,
-                                                  initial_lr)
+          learning_rate = _learning_rate_schedule(global_step_value, max_iters, initial_lr)
           optimizer.learning_rate = learning_rate
-          tf.summary.scalar(
-              'learning_rate', optimizer.learning_rate, step=global_step)
+          tf.summary.scalar('learning_rate', optimizer.learning_rate, step=global_step)
 
           # Run the training step over num_gpu gpus.
           desc_dist_loss, attn_dist_loss = distributed_train_step(input_batch)
 
           # Log losses and accuracies to tensorboard.
-          tf.summary.scalar(
-              'loss/desc/crossentropy', desc_dist_loss, step=global_step)
-          tf.summary.scalar(
-              'loss/attn/crossentropy', attn_dist_loss, step=global_step)
-          tf.summary.scalar(
-              'train_accuracy/desc',
-              desc_train_accuracy.result(),
-              step=global_step)
-          tf.summary.scalar(
-              'train_accuracy/attn',
-              attn_train_accuracy.result(),
-              step=global_step)
+          tf.summary.scalar('loss/desc/crossentropy', desc_dist_loss, step=global_step)
+          tf.summary.scalar('loss/attn/crossentropy', attn_dist_loss, step=global_step)
+          tf.summary.scalar('train_accuracy/desc', desc_train_accuracy.result(), step=global_step)
+          tf.summary.scalar('train_accuracy/attn', attn_train_accuracy.result(), step=global_step)
+
+          # print(desc_train_accuracy.result())
 
           # Print to console if running locally.
           if FLAGS.debug:
