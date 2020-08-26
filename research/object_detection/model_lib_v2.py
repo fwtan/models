@@ -23,11 +23,11 @@ import os
 import time
 
 import tensorflow.compat.v1 as tf
+import tensorflow.compat.v2 as tf2
 
 from object_detection import eval_util
 from object_detection import inputs
 from object_detection import model_lib
-from object_detection.builders import model_builder
 from object_detection.builders import optimizer_builder
 from object_detection.core import standard_fields as fields
 from object_detection.protos import train_pb2
@@ -103,6 +103,8 @@ def _compute_losses_and_predictions_dicts(
           containing group_of annotations.
         labels[fields.InputDataFields.groundtruth_labeled_classes] is a float32
           k-hot tensor of classes.
+        labels[fields.InputDataFields.groundtruth_track_ids] is a int32
+          tensor of track IDs.
     add_regularization_loss: Whether or not to include the model's
       regularization loss in the losses dictionary.
 
@@ -117,7 +119,8 @@ def _compute_losses_and_predictions_dicts(
 
   prediction_dict = model.predict(
       preprocessed_images,
-      features[fields.InputDataFields.true_image_shape])
+      features[fields.InputDataFields.true_image_shape],
+      **model.get_side_inputs(features))
   prediction_dict = ops.bfloat16_to_float32_nested(prediction_dict)
 
   losses_dict = model.loss(
@@ -214,6 +217,8 @@ def eager_train_step(detection_model,
           (v, u) are part-relative normalized surface coordinates.
         labels[fields.InputDataFields.groundtruth_labeled_classes] is a float32
           k-hot tensor of classes.
+        labels[fields.InputDataFields.groundtruth_track_ids] is a int32
+          tensor of track IDs.
     unpad_groundtruth_tensors: A parameter passed to unstack_batch.
     optimizer: The training optimizer that will update the variables.
     learning_rate: The learning rate tensor for the current training step.
@@ -277,7 +282,8 @@ def validate_tf_v2_checkpoint_restore_map(checkpoint_restore_map):
   """Ensure that given dict is a valid TF v2 style restore map.
 
   Args:
-    checkpoint_restore_map: A dict mapping strings to tf.keras.Model objects.
+    checkpoint_restore_map: A nested dict mapping strings to
+      tf.keras.Model objects.
 
   Raises:
     ValueError: If they keys in checkpoint_restore_map are not strings or if
@@ -289,8 +295,12 @@ def validate_tf_v2_checkpoint_restore_map(checkpoint_restore_map):
     if not (isinstance(key, str) and
             (isinstance(value, tf.Module)
              or isinstance(value, tf.train.Checkpoint))):
-      raise TypeError(RESTORE_MAP_ERROR_TEMPLATE.format(
-          key.__class__.__name__, value.__class__.__name__))
+      if isinstance(key, str) and isinstance(value, dict):
+        validate_tf_v2_checkpoint_restore_map(value)
+      else:
+        raise TypeError(
+            RESTORE_MAP_ERROR_TEMPLATE.format(key.__class__.__name__,
+                                              value.__class__.__name__))
 
 
 def is_object_based_checkpoint(checkpoint_path):
@@ -413,8 +423,9 @@ def train_loop(
     train_steps=None,
     use_tpu=False,
     save_final_config=False,
-    checkpoint_every_n=5000,
+    checkpoint_every_n=1000,
     checkpoint_max_to_keep=7,
+    record_summaries=True,
     **kwargs):
   """Trains a model using eager + functions.
 
@@ -444,6 +455,7 @@ def train_loop(
       Checkpoint every n training steps.
     checkpoint_max_to_keep:
       int, the number of most recent checkpoints to keep in the model directory.
+    record_summaries: Boolean, whether or not to record summaries.
     **kwargs: Additional keyword arguments for configuration override.
   """
   ## Parse the configs
@@ -495,7 +507,7 @@ def train_loop(
   # Build the model, optimizer, and training input
   strategy = tf.compat.v2.distribute.get_strategy()
   with strategy.scope():
-    detection_model = model_builder.build(
+    detection_model = MODEL_BUILD_UTIL_MAP['detection_model_fn_base'](
         model_config=model_config, is_training=True)
 
     def train_dataset_fn(input_context):
@@ -530,8 +542,11 @@ def train_loop(
   # is the chief.
   summary_writer_filepath = get_filepath(strategy,
                                          os.path.join(model_dir, 'train'))
-  summary_writer = tf.compat.v2.summary.create_file_writer(
-      summary_writer_filepath)
+  if record_summaries:
+    summary_writer = tf.compat.v2.summary.create_file_writer(
+        summary_writer_filepath)
+  else:
+    summary_writer = tf2.summary.create_noop_writer()
 
   if use_tpu:
     num_steps_per_iteration = 100
@@ -603,7 +618,9 @@ def train_loop(
 
           if num_steps_per_iteration > 1:
             for _ in tf.range(num_steps_per_iteration - 1):
-              _sample_and_train(strategy, train_step_fn, data_iterator)
+              # Following suggestion on yaqs/5402607292645376
+              with tf.name_scope(''):
+                _sample_and_train(strategy, train_step_fn, data_iterator)
 
           return _sample_and_train(strategy, train_step_fn, data_iterator)
 
@@ -926,7 +943,7 @@ def eval_continuously(
   if kwargs['use_bfloat16']:
     tf.compat.v2.keras.mixed_precision.experimental.set_policy('mixed_bfloat16')
 
-  detection_model = model_builder.build(
+  detection_model = MODEL_BUILD_UTIL_MAP['detection_model_fn_base'](
       model_config=model_config, is_training=True)
 
   # Create the inputs.
@@ -941,8 +958,6 @@ def eval_continuously(
 
   if eval_index is not None:
     eval_inputs = [eval_inputs[eval_index]]
-    tf.logging.info('eval_index selected - {}'.format(
-        eval_inputs))
 
   global_step = tf.compat.v2.Variable(
       0, trainable=False, dtype=tf.compat.v2.dtypes.int64)

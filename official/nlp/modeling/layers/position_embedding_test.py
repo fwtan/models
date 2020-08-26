@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for Keras-based positional embedding layer."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 import tensorflow as tf
 
@@ -126,6 +122,7 @@ class PositionEmbeddingLayerTest(keras_parameterized.TestCase):
     # sine cosine relative position embedding formula.
     expected_output_tensor = tf.constant([[0, 0, 0, 0, 1, 1, 1, 1]])
     self.assertAllEqual(output_tensor, expected_output_tensor)
+
 
 if __name__ == "__main__":
   tf.test.main()

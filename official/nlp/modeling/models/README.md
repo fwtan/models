@@ -10,8 +10,8 @@ model containing a single classification head using the Classification network.
 It can be used as a regression model as well.
 
 * [`BertTokenClassifier`](bert_token_classifier.py) implements a simple token
-classification model containing a single classification head using the
-TokenClassification network.
+classification model containing a single classification head over the sequence
+output embeddings.
 
 * [`BertSpanLabeler`](bert_span_labeler.py) implementats a simple single-span
 start-end predictor (that is, a model that predicts two values: a start token
@@ -20,3 +20,6 @@ index and an end token index), suitable for SQuAD-style tasks.
 * [`BertPretrainer`](bert_pretrainer.py) implements a masked LM and a
 classification head using the Masked LM and Classification networks,
 respectively.
+
+* [`DualEncoder`](dual_encoder.py) implements a dual encoder model, suitbale for
+retrieval tasks.

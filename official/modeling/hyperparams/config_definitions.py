@@ -21,7 +21,6 @@ import dataclasses
 
 from official.modeling.hyperparams import base_config
 from official.modeling.optimization.configs import optimization_config
-from official.utils import registry
 
 OptimizationConfig = optimization_config.OptimizationConfig
 
@@ -56,14 +55,14 @@ class DataConfig(base_config.Config):
       exhaust all the examples in the dataset.
     tfds_data_dir: A str specifying the directory to read/write TFDS data.
     tfds_download: A bool to indicate whether to download data using TFDS.
-    tfds_as_supervised: A bool. When loading dataset from TFDS, if True,
-      the returned tf.data.Dataset will have a 2-tuple structure (input, label)
-      according to builder.info.supervised_keys; if False, the default,
-      the returned tf.data.Dataset will have a dictionary with all the features.
-    tfds_skip_decoding_feature: A str to indicate which features are skipped
-      for decoding when loading dataset from TFDS. Use comma to separate
-      multiple features. The main use case is to skip the image/video decoding
-      for better performance.
+    tfds_as_supervised: A bool. When loading dataset from TFDS, if True, the
+      returned tf.data.Dataset will have a 2-tuple structure (input, label)
+      according to builder.info.supervised_keys; if False, the default, the
+      returned tf.data.Dataset will have a dictionary with all the features.
+    tfds_skip_decoding_feature: A str to indicate which features are skipped for
+      decoding when loading dataset from TFDS. Use comma to separate multiple
+      features. The main use case is to skip the image/video decoding for better
+      performance.
   """
   input_path: str = ""
   tfds_name: str = ""
@@ -178,11 +177,23 @@ class TrainerConfig(base_config.Config):
     checkpoint_interval: number of steps between checkpoints.
     max_to_keep: max checkpoints to keep.
     continuous_eval_timeout: maximum number of seconds to wait between
-      checkpoints, if set to None, continuous eval will wait indefinitely.
+      checkpoints, if set to None, continuous eval will wait indefinitely. This
+      is only used continuous_train_and_eval and continuous_eval modes.
     train_steps: number of train steps.
     validation_steps: number of eval steps. If `None`, the entire eval dataset
       is used.
     validation_interval: number of training steps to run between evaluations.
+    best_checkpoint_export_subdir: if set, the trainer will keep track of the
+      best evaluation metric, and export the corresponding best checkpoint under
+      `model_dir/best_checkpoint_export_subdir`. Note that this only works if
+      mode contains eval (such as `train_and_eval`, `continuous_eval`, and
+      `continuous_train_and_eval`).
+    best_checkpoint_eval_metric: for exporting the best checkpoint, which
+      evaluation metric the trainer should monitor. This can be any evaluation
+      metric appears on tensorboard.
+    best_checkpoint_metric_comp: for exporting the best checkpoint, how the
+      trainer should compare the evaluation metrics. This can be either `higher`
+      (higher the better) or `lower` (lower the better).
   """
   optimizer_config: OptimizationConfig = OptimizationConfig()
   # Orbit settings.
@@ -201,10 +212,15 @@ class TrainerConfig(base_config.Config):
   train_steps: int = 0
   validation_steps: Optional[int] = None
   validation_interval: int = 1000
+  # Best checkpoint export.
+  best_checkpoint_export_subdir: str = ""
+  best_checkpoint_eval_metric: str = ""
+  best_checkpoint_metric_comp: str = "higher"
 
 
 @dataclasses.dataclass
 class TaskConfig(base_config.Config):
+  init_checkpoint: str = ""
   model: base_config.Config = None
   train_data: DataConfig = DataConfig()
   validation_data: DataConfig = DataConfig()
@@ -216,17 +232,3 @@ class ExperimentConfig(base_config.Config):
   task: TaskConfig = TaskConfig()
   trainer: TrainerConfig = TrainerConfig()
   runtime: RuntimeConfig = RuntimeConfig()
-
-
-_REGISTERED_CONFIGS = {}
-
-
-def register_config_factory(name):
-  """Register ExperimentConfig factory method."""
-  return registry.register(_REGISTERED_CONFIGS, name)
-
-
-def get_exp_config_creater(exp_name: str):
-  """Looks up ExperimentConfig factory methods."""
-  exp_creater = registry.lookup(_REGISTERED_CONFIGS, exp_name)
-  return exp_creater
