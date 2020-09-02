@@ -74,7 +74,7 @@ def main(argv):
   extractor_fn = extractor.MakeExtractor(config)
 
   start = time.time()
-  count = 0
+  missing_images = []
   for i in range(num_images):
     if i == 0:
       print('Starting to extract features...')
@@ -95,7 +95,8 @@ def main(argv):
     # print('--------')
     input_image_filename = os.path.join(FLAGS.images_dir, image_path)
     if not os.path.exists(input_image_filename):
-        count += 1
+        missing_images.append(image_name)
+    
     
     
 
@@ -138,7 +139,9 @@ def main(argv):
     #   feature_io.WriteToFile(output_local_feature_filename, locations,
     #                          feature_scales, descriptors, attention)
 
-  print('count', count)
+  print('count', len(missing_images))
+  with open('missing.txt', 'w') as f:
+    f.write('\n'.join(missing_images))
 
 if __name__ == '__main__':
   app.run(main)
