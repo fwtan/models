@@ -93,46 +93,47 @@ def main(argv):
     # print(image_height)
     # print('--------')
     input_image_filename = os.path.join(FLAGS.images_dir, image_path)
+    assert (os.path.exists(input_image_filename))
     
 
-    # Compose output file name and decide if image should be skipped.
-    should_skip_global = True
-    should_skip_local = True
-    if config.use_global_features:
-      output_global_feature_filename = os.path.join(FLAGS.output_features_dir, image_name + _DELG_GLOBAL_EXTENSION)
-      if not tf.io.gfile.exists(output_global_feature_filename):
-        should_skip_global = False
-    if config.use_local_features:
-      output_local_feature_filename = os.path.join(FLAGS.output_features_dir, image_name + _DELG_LOCAL_EXTENSION)
-      if not tf.io.gfile.exists(output_local_feature_filename):
-        should_skip_local = False
-    if should_skip_global and should_skip_local:
-      print('Skipping %s' % image_name)
-      continue
+    # # Compose output file name and decide if image should be skipped.
+    # should_skip_global = True
+    # should_skip_local = True
+    # if config.use_global_features:
+    #   output_global_feature_filename = os.path.join(FLAGS.output_features_dir, image_name + _DELG_GLOBAL_EXTENSION)
+    #   if not tf.io.gfile.exists(output_global_feature_filename):
+    #     should_skip_global = False
+    # if config.use_local_features:
+    #   output_local_feature_filename = os.path.join(FLAGS.output_features_dir, image_name + _DELG_LOCAL_EXTENSION)
+    #   if not tf.io.gfile.exists(output_local_feature_filename):
+    #     should_skip_local = False
+    # if should_skip_global and should_skip_local:
+    #   print('Skipping %s' % image_name)
+    #   continue
 
-    pil_im = utils.RgbLoader(input_image_filename)
-    resize_factor = 1.0
-    # if FLAGS.image_set == 'query':
-    #   # Crop query image according to bounding box.
-    #   original_image_size = max(pil_im.size)
-    #   bbox = [int(round(b)) for b in ground_truth[i]['bbx']]
-    #   pil_im = pil_im.crop(bbox)
-    #   cropped_image_size = max(pil_im.size)
-    #   resize_factor = cropped_image_size / original_image_size
-    im = np.array(pil_im)
+    # pil_im = utils.RgbLoader(input_image_filename)
+    # resize_factor = 1.0
+    # # if FLAGS.image_set == 'query':
+    # #   # Crop query image according to bounding box.
+    # #   original_image_size = max(pil_im.size)
+    # #   bbox = [int(round(b)) for b in ground_truth[i]['bbx']]
+    # #   pil_im = pil_im.crop(bbox)
+    # #   cropped_image_size = max(pil_im.size)
+    # #   resize_factor = cropped_image_size / original_image_size
+    # im = np.array(pil_im)
 
-    # Extract and save features.
-    extracted_features = extractor_fn(im, resize_factor)
-    if config.use_global_features:
-      global_descriptor = extracted_features['global_descriptor']
-      datum_io.WriteToFile(global_descriptor, output_global_feature_filename)
-    if config.use_local_features:
-      locations = extracted_features['local_features']['locations']
-      descriptors = extracted_features['local_features']['descriptors']
-      feature_scales = extracted_features['local_features']['scales']
-      attention = extracted_features['local_features']['attention']
-      feature_io.WriteToFile(output_local_feature_filename, locations,
-                             feature_scales, descriptors, attention)
+    # # Extract and save features.
+    # extracted_features = extractor_fn(im, resize_factor)
+    # if config.use_global_features:
+    #   global_descriptor = extracted_features['global_descriptor']
+    #   datum_io.WriteToFile(global_descriptor, output_global_feature_filename)
+    # if config.use_local_features:
+    #   locations = extracted_features['local_features']['locations']
+    #   descriptors = extracted_features['local_features']['descriptors']
+    #   feature_scales = extracted_features['local_features']['scales']
+    #   attention = extracted_features['local_features']['attention']
+    #   feature_io.WriteToFile(output_local_feature_filename, locations,
+    #                          feature_scales, descriptors, attention)
 
 
 if __name__ == '__main__':
