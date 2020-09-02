@@ -74,6 +74,7 @@ def main(argv):
   extractor_fn = extractor.MakeExtractor(config)
 
   start = time.time()
+  count = 0
   for i in range(num_images):
     if i == 0:
       print('Starting to extract features...')
@@ -93,7 +94,9 @@ def main(argv):
     # print(image_height)
     # print('--------')
     input_image_filename = os.path.join(FLAGS.images_dir, image_path)
-    assert (os.path.exists(input_image_filename))
+    if not os.path.exists(input_image_filename):
+        count += 1
+    
     
 
     # # Compose output file name and decide if image should be skipped.
@@ -135,6 +138,7 @@ def main(argv):
     #   feature_io.WriteToFile(output_local_feature_filename, locations,
     #                          feature_scales, descriptors, attention)
 
+  print('count', count)
 
 if __name__ == '__main__':
   app.run(main)
