@@ -33,7 +33,7 @@ _DELF_EXTENSION = '.delf'
 
 
 # Pace to report extraction log.
-_STATUS_CHECK_ITERATIONS = 10
+_STATUS_CHECK_ITERATIONS = 100
 
 
 def main(argv):
