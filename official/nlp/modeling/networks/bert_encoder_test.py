@@ -18,28 +18,29 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+# Import libraries
 from absl.testing import parameterized
 import numpy as np
 import tensorflow as tf
 
 from tensorflow.python.keras import keras_parameterized  # pylint: disable=g-direct-tensorflow-import
-from official.nlp.modeling.networks import transformer_encoder
+from official.nlp.modeling.networks import bert_encoder
 
 
 # This decorator runs the test in V1, V2-Eager, and V2-Functional mode. It
 # guarantees forward compatibility of this code for the V2 switchover.
 @keras_parameterized.run_all_keras_modes
-class TransformerEncoderTest(keras_parameterized.TestCase):
+class BertEncoderTest(keras_parameterized.TestCase):
 
   def tearDown(self):
-    super(TransformerEncoderTest, self).tearDown()
+    super(BertEncoderTest, self).tearDown()
     tf.keras.mixed_precision.experimental.set_policy("float32")
 
   def test_network_creation(self):
     hidden_size = 32
     sequence_length = 21
-    # Create a small TransformerEncoder for testing.
-    test_network = transformer_encoder.TransformerEncoder(
+    # Create a small BertEncoder for testing.
+    test_network = bert_encoder.BertEncoder(
         vocab_size=100,
         hidden_size=hidden_size,
         num_attention_heads=2,
@@ -66,8 +67,8 @@ class TransformerEncoderTest(keras_parameterized.TestCase):
   def test_all_encoder_outputs_network_creation(self):
     hidden_size = 32
     sequence_length = 21
-    # Create a small TransformerEncoder for testing.
-    test_network = transformer_encoder.TransformerEncoder(
+    # Create a small BertEncoder for testing.
+    test_network = bert_encoder.BertEncoder(
         vocab_size=100,
         hidden_size=hidden_size,
         num_attention_heads=2,
@@ -94,8 +95,8 @@ class TransformerEncoderTest(keras_parameterized.TestCase):
     hidden_size = 32
     sequence_length = 21
     tf.keras.mixed_precision.experimental.set_policy("mixed_float16")
-    # Create a small TransformerEncoder for testing.
-    test_network = transformer_encoder.TransformerEncoder(
+    # Create a small BertEncoder for testing.
+    test_network = bert_encoder.BertEncoder(
         vocab_size=100,
         hidden_size=hidden_size,
         num_attention_heads=2,
@@ -125,15 +126,14 @@ class TransformerEncoderTest(keras_parameterized.TestCase):
     sequence_length = 21
     vocab_size = 57
     num_types = 7
-    # Create a small TransformerEncoder for testing.
-    test_network = transformer_encoder.TransformerEncoder(
+    # Create a small BertEncoder for testing.
+    test_network = bert_encoder.BertEncoder(
         vocab_size=vocab_size,
         hidden_size=hidden_size,
         num_attention_heads=2,
         num_layers=3,
         type_vocab_size=num_types,
         output_range=output_range)
-    self.assertTrue(test_network._position_embedding_layer._use_dynamic_slicing)
     # Create the inputs (note that the first dimension is implicit).
     word_ids = tf.keras.Input(shape=(sequence_length,), dtype=tf.int32)
     mask = tf.keras.Input(shape=(sequence_length,), dtype=tf.int32)
@@ -151,24 +151,25 @@ class TransformerEncoderTest(keras_parameterized.TestCase):
     mask_data = np.random.randint(2, size=(batch_size, sequence_length))
     type_id_data = np.random.randint(
         num_types, size=(batch_size, sequence_length))
-    _ = model.predict([word_id_data, mask_data, type_id_data])
+    outputs = model.predict([word_id_data, mask_data, type_id_data])
+    self.assertEqual(outputs[0].shape[1], out_seq_len)
 
-    # Creates a TransformerEncoder with max_sequence_length != sequence_length
+    # Creates a BertEncoder with max_sequence_length != sequence_length
     max_sequence_length = 128
-    test_network = transformer_encoder.TransformerEncoder(
+    test_network = bert_encoder.BertEncoder(
         vocab_size=vocab_size,
         hidden_size=hidden_size,
         max_sequence_length=max_sequence_length,
         num_attention_heads=2,
         num_layers=3,
         type_vocab_size=num_types)
-    self.assertTrue(test_network._position_embedding_layer._use_dynamic_slicing)
+    data, pooled = test_network([word_ids, mask, type_ids])
     model = tf.keras.Model([word_ids, mask, type_ids], [data, pooled])
     outputs = model.predict([word_id_data, mask_data, type_id_data])
-    self.assertEqual(outputs[0].shape[1], out_seq_len)
+    self.assertEqual(outputs[0].shape[1], sequence_length)
 
-    # Creates a TransformerEncoder with embedding_width != hidden_size
-    test_network = transformer_encoder.TransformerEncoder(
+    # Creates a BertEncoder with embedding_width != hidden_size
+    test_network = bert_encoder.BertEncoder(
         vocab_size=vocab_size,
         hidden_size=hidden_size,
         max_sequence_length=max_sequence_length,
@@ -176,13 +177,13 @@ class TransformerEncoderTest(keras_parameterized.TestCase):
         num_layers=3,
         type_vocab_size=num_types,
         embedding_width=16)
+    data, pooled = test_network([word_ids, mask, type_ids])
     model = tf.keras.Model([word_ids, mask, type_ids], [data, pooled])
     outputs = model.predict([word_id_data, mask_data, type_id_data])
     self.assertEqual(outputs[0].shape[-1], hidden_size)
     self.assertTrue(hasattr(test_network, "_embedding_projection"))
 
   def test_serialize_deserialize(self):
-    tf.keras.mixed_precision.experimental.set_policy("mixed_float16")
     # Create a network object that sets all of its config options.
     kwargs = dict(
         vocab_size=100,
@@ -199,24 +200,26 @@ class TransformerEncoderTest(keras_parameterized.TestCase):
         return_all_encoder_outputs=False,
         output_range=-1,
         embedding_width=16)
-    network = transformer_encoder.TransformerEncoder(**kwargs)
-
+    network = bert_encoder.BertEncoder(**kwargs)
     expected_config = dict(kwargs)
     expected_config["activation"] = tf.keras.activations.serialize(
         tf.keras.activations.get(expected_config["activation"]))
     expected_config["initializer"] = tf.keras.initializers.serialize(
         tf.keras.initializers.get(expected_config["initializer"]))
     self.assertEqual(network.get_config(), expected_config)
-
     # Create another network object from the first object's config.
-    new_network = transformer_encoder.TransformerEncoder.from_config(
-        network.get_config())
+    new_network = bert_encoder.BertEncoder.from_config(network.get_config())
 
     # Validate that the config can be forced to JSON.
-    _ = new_network.to_json()
+    _ = network.to_json()
 
     # If the serialization was successful, the new config should match the old.
     self.assertAllEqual(network.get_config(), new_network.get_config())
+
+    # Tests model saving/loading.
+    model_path = self.get_temp_dir() + "/model"
+    network.save(model_path)
+    _ = tf.keras.models.load_model(model_path)
 
 
 if __name__ == "__main__":

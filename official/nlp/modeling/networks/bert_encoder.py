@@ -14,19 +14,16 @@
 # ==============================================================================
 """Transformer-based text encoder network."""
 # pylint: disable=g-classes-have-attributes
-from __future__ import absolute_import
-from __future__ import division
-# from __future__ import google_type_annotations
-from __future__ import print_function
 
 import tensorflow as tf
 
 from official.modeling import activations
+from official.nlp import keras_nlp
 from official.nlp.modeling import layers
 
 
 @tf.keras.utils.register_keras_serializable(package='Text')
-class TransformerEncoder(tf.keras.Model):
+class BertEncoder(tf.keras.Model):
   """Bi-directional Transformer-based encoder network.
 
   This network implements a bi-directional Transformer-based encoder as
@@ -136,10 +133,9 @@ class TransformerEncoder(tf.keras.Model):
     word_embeddings = self._embedding_layer(word_ids)
 
     # Always uses dynamic slicing for simplicity.
-    self._position_embedding_layer = layers.PositionEmbedding(
+    self._position_embedding_layer = keras_nlp.PositionEmbedding(
         initializer=initializer,
-        use_dynamic_slicing=True,
-        max_sequence_length=max_sequence_length,
+        max_length=max_sequence_length,
         name='position_embedding')
     position_embeddings = self._position_embedding_layer(word_embeddings)
     self._type_embedding_layer = layers.OnDeviceEmbedding(
@@ -172,19 +168,19 @@ class TransformerEncoder(tf.keras.Model):
 
     self._transformer_layers = []
     data = embeddings
-    attention_mask = layers.SelfAttentionMask()([data, mask])
+    attention_mask = keras_nlp.SelfAttentionMask()(data, mask)
     encoder_outputs = []
     for i in range(num_layers):
       if i == num_layers - 1 and output_range is not None:
         transformer_output_range = output_range
       else:
         transformer_output_range = None
-      layer = layers.Transformer(
+      layer = keras_nlp.layers.TransformerEncoderBlock(
           num_attention_heads=num_attention_heads,
-          intermediate_size=intermediate_size,
-          intermediate_activation=activation,
-          dropout_rate=dropout_rate,
-          attention_dropout_rate=attention_dropout_rate,
+          inner_dim=intermediate_size,
+          inner_activation=activation,
+          output_dropout=dropout_rate,
+          attention_dropout=attention_dropout_rate,
           output_range=transformer_output_range,
           kernel_initializer=initializer,
           name='transformer/layer_%d' % i)
@@ -207,7 +203,7 @@ class TransformerEncoder(tf.keras.Model):
     else:
       outputs = [encoder_outputs[-1], cls_output]
 
-    super(TransformerEncoder, self).__init__(
+    super(BertEncoder, self).__init__(
         inputs=[word_ids, mask, type_ids], outputs=outputs, **kwargs)
 
   def get_embedding_table(self):

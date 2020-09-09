@@ -1121,6 +1121,22 @@ def evaluator_options_from_eval_config(eval_config):
           'include_metrics_per_category': (
               eval_config.include_metrics_per_category)
       }
+      # For coco detection eval, if the eval_config proto contains the
+      # "skip_predictions_for_unlabeled_class" field, include this field in
+      # evaluator_options.
+      if eval_metric_fn_key == 'coco_detection_metrics' and hasattr(
+          eval_config, 'skip_predictions_for_unlabeled_class'):
+        evaluator_options[eval_metric_fn_key].update({
+            'skip_predictions_for_unlabeled_class':
+                (eval_config.skip_predictions_for_unlabeled_class)
+        })
+      for super_category in eval_config.super_categories:
+        if 'super_categories' not in evaluator_options[eval_metric_fn_key]:
+          evaluator_options[eval_metric_fn_key]['super_categories'] = {}
+        key = super_category
+        value = eval_config.super_categories[key].split(',')
+        evaluator_options[eval_metric_fn_key]['super_categories'][key] = value
+
     elif eval_metric_fn_key == 'precision_at_recall_detection_metrics':
       evaluator_options[eval_metric_fn_key] = {
           'recall_lower_bound': (eval_config.recall_lower_bound),
