@@ -37,6 +37,9 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string(
     'dataset_file_path', '/tmp/gnd_roxford5k.mat',
     'Dataset file for Revisited Oxford or Paris dataset, in .mat format.')
+flags.DEFINE_string(
+    'd1m_file_path', '/tmp/revisitop1m.txt',
+    'Dataset file for Revisited Oxford or Paris dataset, in .mat format.')
 flags.DEFINE_string('query_features_dir', '/tmp/features/query',
                     'Directory where query DELG features are located.')
 flags.DEFINE_string('index_features_dir', '/tmp/features/index',
