@@ -37,7 +37,7 @@ _DELF_EXTENSION = '.delf'
 _STATUS_CHECK_GV_ITERATIONS = 10
 
 # Re-ranking / geometric verification parameters.
-_NUM_TO_RERANK = 100
+_NUM_TO_RERANK = 200
 _NUM_RANSAC_TRIALS = 1000
 _MIN_RANSAC_SAMPLES = 3
 
