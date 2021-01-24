@@ -9,6 +9,7 @@ import time
 
 import numpy as np
 import tensorflow as tf
+from copy import deepcopy
 
 from google.protobuf import text_format
 from tensorflow.python.platform import app
@@ -124,8 +125,36 @@ def main(argv):
   print('done! Found %d queries and %d index images' %
         (num_query_images, num_index_images))
 
-  nn_inds = pickle_load(cmd_args.cache_path)
-  print(nn_inds.shape)
+  cache_nn_inds = pickle_load(cmd_args.cache_path)
+#   print(cache_nn_inds.shape)
+  num_samples, top_k = cache_nn_inds.size()
+  top_k = min(100, top_k)
+
+  ########################################################################################
+  ## Medium
+  medium_nn_inds = deepcopy(cache_nn_inds.cpu().data.numpy())
+  for i in range(num_samples):
+      junk_ids = medium_ground_truth[i]['junk']
+      all_ids = medium_nn_inds[i]
+      pos = np.in1d(all_ids, junk_ids)
+      neg = np.array([not x for x in pos])
+      new_ids = np.concatenate([np.arange(len(all_ids))[neg], np.arange(len(all_ids))[pos]])
+      new_ids = all_ids[new_ids]
+      medium_nn_inds[i] = new_ids
+  medium_nn_inds = torch.from_numpy(medium_nn_inds)
+  ########################################################################################
+  ## Hard
+  hard_nn_inds = deepcopy(cache_nn_inds.cpu().data.numpy())
+  for i in range(num_samples):
+      junk_ids = hard_ground_truth[i]['junk']
+      all_ids = hard_nn_inds[i]
+      pos = np.in1d(all_ids, junk_ids)
+      neg = np.array([not x for x in pos])
+      new_ids = np.concatenate([np.arange(len(all_ids))[neg], np.arange(len(all_ids))[pos]])
+      new_ids = all_ids[new_ids]
+      hard_nn_inds[i] = new_ids
+  hard_nn_inds = torch.from_numpy(hard_nn_inds)
+  ########################################################################################
 
   # Parse AggregationConfig protos.
   query_config = aggregation_config_pb2.AggregationConfig()
@@ -159,25 +188,54 @@ def main(argv):
     print('Performing retrieval with query %d (%s)...' % (i, query_list[i]))
     start = time.clock()
 
-    # Compute similarity between aggregated descriptors.
-    similarities = np.zeros([num_index_images])
-    for j in range(num_index_images):
-      similarities[j] = similarity_computer.ComputeSimilarity(
-          query_aggregated_descriptors[i], index_aggregated_descriptors[j],
-          query_visual_words[i], index_visual_words[j])
+    # curr_ranks = nn_inds[i]
+    # similarities = np.zeros([100])
+    # for j in range(100):
+    #     nid = curr_ranks[j]
+    #     similarities[j] = similarity_computer.ComputeSimilarity(
+    #       query_aggregated_descriptors[i], index_aggregated_descriptors[nid],
+    #       query_visual_words[i], index_visual_words[nid])
+    # new_ranks = np.concatenation([curr_ranks[np.argsort(-similarities)], curr_ranks[100:]], 0)
+    ranks_before_gv[i] = cache_nn_inds[i]
 
-    ranks_before_gv[i] = np.argsort(-similarities)
+    # # Compute similarity between aggregated descriptors.
+    # similarities = np.zeros([num_index_images])
+    # for j in range(num_index_images):
+    #   similarities[j] = similarity_computer.ComputeSimilarity(
+    #       query_aggregated_descriptors[i], index_aggregated_descriptors[j],
+    #       query_visual_words[i], index_visual_words[j])
+
+    # ranks_before_gv[i] = np.argsort(-similarities)
 
     # Re-rank using geometric verification.
     if cmd_args.use_geometric_verification:
-      medium_ranks_after_gv[i] = image_reranking.RerankByGeometricVerification(
-          ranks_before_gv[i], similarities, query_list[i], index_list,
-          cmd_args.query_features_dir, cmd_args.index_features_dir,
-          set(medium_ground_truth[i]['junk']))
-      hard_ranks_after_gv[i] = image_reranking.RerankByGeometricVerification(
-          ranks_before_gv[i], similarities, query_list[i], index_list,
-          cmd_args.query_features_dir, cmd_args.index_features_dir,
-          set(hard_ground_truth[i]['junk']))
+        curr_ranks = deepcopy(medium_nn_inds[i])
+        similarities = np.zeros([100])
+        for j in range(100):
+            nid = curr_ranks[j]
+            similarities[j] = similarity_computer.ComputeSimilarity(
+              query_aggregated_descriptors[i], index_aggregated_descriptors[nid],
+              query_visual_words[i], index_visual_words[nid])
+        medium_ranks_after_gv[i] = np.concatenation([curr_ranks[np.argsort(-similarities)], curr_ranks[100:]], 0)
+
+        curr_ranks = deepcopy(hard_nn_inds[i])
+        similarities = np.zeros([100])
+        for j in range(100):
+            nid = curr_ranks[j]
+            similarities[j] = similarity_computer.ComputeSimilarity(
+              query_aggregated_descriptors[i], index_aggregated_descriptors[nid],
+              query_visual_words[i], index_visual_words[nid])
+        hard_ranks_after_gv[i] = np.concatenation([curr_ranks[np.argsort(-similarities)], curr_ranks[100:]], 0)
+
+
+    #   medium_ranks_after_gv[i] = image_reranking.RerankByGeometricVerification(
+    #       ranks_before_gv[i], similarities, query_list[i], index_list,
+    #       cmd_args.query_features_dir, cmd_args.index_features_dir,
+    #       set(medium_ground_truth[i]['junk']))
+    #   hard_ranks_after_gv[i] = image_reranking.RerankByGeometricVerification(
+    #       ranks_before_gv[i], similarities, query_list[i], index_list,
+    #       cmd_args.query_features_dir, cmd_args.index_features_dir,
+    #       set(hard_ground_truth[i]['junk']))
 
     elapsed = (time.clock() - start)
     print('done! Retrieval for query %d took %f seconds' % (i, elapsed))
