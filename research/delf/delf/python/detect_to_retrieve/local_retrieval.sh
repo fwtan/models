@@ -6,4 +6,5 @@ python perform_retrieval_delg_local.py \
   --index_aggregation_dir data/paris6k_aggregation/index_delg \
   --query_aggregation_dir data/paris6k_aggregation/query_delg \
   --output_dir results/paris6k_aggregation_local \
-  --cache_path caches/paris6k_r50/nn_inds.pkl
+  --cache_path caches/paris6k_r50/nn_inds.pkl \
+  --use_geometric_verification True
