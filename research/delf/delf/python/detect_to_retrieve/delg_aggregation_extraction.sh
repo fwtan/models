@@ -15,8 +15,8 @@ python extract_aggregation_delg.py \
   --output_aggregation_dir data/paris6k_aggregation/query_delg 
 
 
-python extract_aggregation_delg.py \
-  --aggregation_config_path index_aggregation_config_delg.pbtxt \
-  --dataset_file_path data/paris6k/gnd_rparis6k.mat \
-  --features_dir data/paris6k/delg_features_r50 \
-  --output_aggregation_dir data/paris6k_aggregation/index_delg 
+# python extract_aggregation_delg.py \
+#   --aggregation_config_path index_aggregation_config_delg.pbtxt \
+#   --dataset_file_path data/paris6k/gnd_rparis6k.mat \
+#   --features_dir data/paris6k/delg_features_r50 \
+#   --output_aggregation_dir data/paris6k_aggregation/index_delg 
