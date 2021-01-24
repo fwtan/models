@@ -127,12 +127,12 @@ def main(argv):
 
   cache_nn_inds = pickle_load(cmd_args.cache_path)
 #   print(cache_nn_inds.shape)
-  num_samples, top_k = cache_nn_inds.size()
+  num_samples, top_k = cache_nn_inds.shape
   top_k = min(100, top_k)
 
   ########################################################################################
   ## Medium
-  medium_nn_inds = deepcopy(cache_nn_inds.cpu().data.numpy())
+  medium_nn_inds = deepcopy(cache_nn_inds)
   for i in range(num_samples):
       junk_ids = medium_ground_truth[i]['junk']
       all_ids = medium_nn_inds[i]
@@ -144,7 +144,7 @@ def main(argv):
   medium_nn_inds = torch.from_numpy(medium_nn_inds)
   ########################################################################################
   ## Hard
-  hard_nn_inds = deepcopy(cache_nn_inds.cpu().data.numpy())
+  hard_nn_inds = deepcopy(cache_nn_inds)
   for i in range(num_samples):
       junk_ids = hard_ground_truth[i]['junk']
       all_ids = hard_nn_inds[i]
