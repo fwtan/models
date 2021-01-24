@@ -214,7 +214,7 @@ def main(argv):
             similarities[j] = similarity_computer.ComputeSimilarity(
               query_aggregated_descriptors[i], index_aggregated_descriptors[nid],
               query_visual_words[i], index_visual_words[nid])
-        medium_ranks_after_gv[i] = np.concatenation([curr_ranks[np.argsort(-similarities)], curr_ranks[100:]], 0)
+        medium_ranks_after_gv[i] = np.concatenate([curr_ranks[np.argsort(-similarities)], curr_ranks[100:]], 0)
 
         curr_ranks = deepcopy(hard_nn_inds[i])
         similarities = np.zeros([100])
@@ -223,7 +223,7 @@ def main(argv):
             similarities[j] = similarity_computer.ComputeSimilarity(
               query_aggregated_descriptors[i], index_aggregated_descriptors[nid],
               query_visual_words[i], index_visual_words[nid])
-        hard_ranks_after_gv[i] = np.concatenation([curr_ranks[np.argsort(-similarities)], curr_ranks[100:]], 0)
+        hard_ranks_after_gv[i] = np.concatenate([curr_ranks[np.argsort(-similarities)], curr_ranks[100:]], 0)
 
 
     #   medium_ranks_after_gv[i] = image_reranking.RerankByGeometricVerification(
