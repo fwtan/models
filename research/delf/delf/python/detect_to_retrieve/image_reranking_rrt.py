@@ -250,6 +250,8 @@ def RerankByGeometricVerification(input_ranks,
   query_locations = query_locations[:num_local_descriptors]
   query_descriptors = query_descriptors[:num_local_descriptors]
 
+  num_query_desc = len(query_locations)
+
   # Initialize list containing number of inliers and initial similarity scores.
   inliers_and_initial_scores = []
   for i in range(num_index_images):
@@ -290,9 +292,11 @@ def RerankByGeometricVerification(input_ranks,
     index_image_locations = index_image_locations[:num_local_descriptors]
     index_image_descriptors = index_image_descriptors[:num_local_descriptors]
 
+    num_index_desc = len(index_image_locations)
+
     # print('index_image_descriptors', index_image_descriptors.shape)
-    query_descriptors = curr_rrt_feats_1
-    index_image_descriptors = curr_rrt_feats_2
+    query_descriptors = curr_rrt_feats_1[:num_query_desc]
+    index_image_descriptors = curr_rrt_feats_2[:num_index_desc]
 
 
     inliers_and_initial_scores[index_image_id][0], _, cur_t = MatchFeatures(
