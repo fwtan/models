@@ -141,7 +141,6 @@ def main(argv):
       new_ids = np.concatenate([np.arange(len(all_ids))[neg], np.arange(len(all_ids))[pos]])
       new_ids = all_ids[new_ids]
       medium_nn_inds[i] = new_ids
-  medium_nn_inds = torch.from_numpy(medium_nn_inds)
   ########################################################################################
   ## Hard
   hard_nn_inds = deepcopy(cache_nn_inds)
@@ -153,7 +152,6 @@ def main(argv):
       new_ids = np.concatenate([np.arange(len(all_ids))[neg], np.arange(len(all_ids))[pos]])
       new_ids = all_ids[new_ids]
       hard_nn_inds[i] = new_ids
-  hard_nn_inds = torch.from_numpy(hard_nn_inds)
   ########################################################################################
 
   # Parse AggregationConfig protos.
