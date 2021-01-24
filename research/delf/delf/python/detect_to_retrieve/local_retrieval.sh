@@ -5,5 +5,5 @@ python perform_retrieval_delg_local.py \
   --dataset_file_path  data/paris6k/gnd_rparis6k.mat \
   --index_aggregation_dir data/paris6k_aggregation/index_delg \
   --query_aggregation_dir data/paris6k_aggregation/query_delg \
-  --output_dir results/paris6k_aggregation_local
+  --output_dir results/paris6k_aggregation_local \
   --cache_path caches/paris6k_r50/nn_inds.pkl
